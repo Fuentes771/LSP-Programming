@@ -26,10 +26,10 @@ Tujuannya:
 | F2 | Kelola pelanggan (nama, telepon unik, email opsional): lihat, cari, tambah, ubah, hapus. Pelanggan baru juga bisa ditambahkan langsung dari form reservasi dan pesanan. |
 | F3 | Kelola meja (nomor, kapasitas, status Aktif/Nonaktif): lihat, cari, tambah, ubah, hapus. |
 | F4 | Kelola menu (nama, harga, tersedia/tidak): lihat, cari, tambah, ubah, hapus. |
-| F5 | Reservasi: buat, lihat (filter Hari Ini/Akan Datang/Semua + status), ubah, dan ubah status sesuai alur Menunggu → Dikonfirmasi → Selesai, atau Dibatalkan. |
+| F5 | Reservasi: buat, lihat (filter Hari Ini/Akan Datang/Semua + status), ubah, dan ubah status sesuai alur Menunggu → Dikonfirmasi → Selesai, atau Dibatalkan. Reservasi otomatis Selesai saat pesanan terakhirnya selesai. |
 | F6 | Validasi reservasi: jam operasional 10:00–22:00 dengan durasi 2 jam, tidak boleh di waktu yang sudah lewat, jumlah tamu ≤ kapasitas meja, meja harus Aktif, dan tidak boleh tumpang tindih dengan reservasi aktif lain di meja yang sama. |
 | F7 | Pesanan dengan satu atau lebih menu. Subtotal dan total dihitung otomatis. Status: Diproses → Selesai atau Dibatalkan (final). |
-| F8 | Harga di detail pesanan mengikuti harga menu saat pesanan dibuat. Pesanan dari reservasi hanya untuk reservasi yang tamunya sudah datang, dan tanggalnya mengikuti tanggal reservasi. |
+| F8 | Harga di detail pesanan mengikuti harga menu saat pesanan dibuat. Pesanan dari reservasi hanya untuk reservasi berstatus Dikonfirmasi; pelanggan, meja, dan tanggal otomatis mengikuti reservasi. |
 | F9 | Laporan reservasi dan pesanan per rentang tanggal, bisa dicetak lewat browser. |
 
 **Kebutuhan non-fungsional**: antarmuka berbahasa Indonesia dan responsif (Bootstrap 5 + Bootstrap Icons), validasi di server (validasi di browser hanya membantu), prepared statement PDO, escaping output (XSS), pesan berhasil/gagal setelah setiap aksi, data berelasi tidak bisa dihapus, dan pesanan disimpan dalam transaksi.
@@ -76,6 +76,14 @@ Pesanan:    Diproses ──► Selesai
 
 Alur ini disimpan sebagai konstanta `RESERVATION_TRANSITIONS` dan `ORDER_TRANSITIONS`, lalu diperiksa dengan fungsi `canChangeStatus()`.
 
+Keterkaitan reservasi dan pesanan:
+
+```text
+Reservasi Menunggu ──Konfirmasi (tamu datang)──► Dikonfirmasi ──Buat pesanan (pilih reservasi)──► Pesanan Diproses
+                                                                                                   │ Tandai Selesai
+Reservasi Selesai ◄──otomatis jika tidak ada pesanan lain yang Diproses────────────────────────── Pesanan Selesai
+```
+
 ### Struktur Tabel
 
 | Tabel | Kolom | Relasi |
@@ -111,8 +119,8 @@ Catatan desain:
 | Pelanggan baru dari form | `includes/customer_picker.php`, `Customer::runWithCustomer()` | Form reservasi dan pesanan memiliki pilihan **Pelanggan terdaftar / Pelanggan baru**. Jika memilih pelanggan baru, pelanggan dibuat lebih dulu lalu reservasi/pesanan disimpan dalam **satu transaksi**; jika salah satunya gagal, keduanya dibatalkan. `Order::create()` menyesuaikan diri: hanya memulai transaksi sendiri jika belum berada di dalam transaksi. Di form pesanan, pilihan reservasi dinonaktifkan untuk pelanggan baru. |
 | Meja | `pages/tables.php`, `classes/RestaurantTable.php` | Nomor meja unik. Menampilkan jumlah reservasi aktif mendatang. Hapus ditolak jika meja punya reservasi; nonaktifkan ditolak jika masih ada reservasi aktif mendatang. |
 | Menu | `pages/menu.php`, `classes/MenuItem.php` | Harga harus > 0. Hapus ditolak jika menu sudah pernah dipesan; pengguna diarahkan mengubah status menjadi Tidak Tersedia. |
-| Reservasi | `pages/reservations.php`, `classes/Reservation.php` | Halaman daftar (filter + tombol aksi sesuai status: Konfirmasi, Selesai, Pesanan, Ubah, Batalkan) dan halaman form terpisah. `Reservation::create()`/`update()` memeriksa format, jam operasional, waktu lewat, pelanggan, meja Aktif, kapasitas, dan tumpang tindih. `changeStatus()` menegakkan alur status, menolak "Selesai" sebelum tanggalnya, dan menolak pembatalan jika sudah ada pesanan. Di form, JavaScript menonaktifkan meja yang kapasitasnya kurang. |
-| Pesanan | `pages/orders.php`, `classes/Order.php` | Form dengan tombol −/+ dan pratinjau subtotal/total. Pilihan reservasi difilter sesuai pelanggan; memilih reservasi mengunci tanggal. Bisa dibuka langsung dari tombol "Pesanan" di daftar reservasi. `Order::create()` mengambil harga dari database, memvalidasi reservasi, lalu menyimpan pesanan dan item dalam satu transaksi. Detail menampilkan meja & jam reservasi dan hanya tombol status yang sah. |
+| Reservasi | `pages/reservations.php`, `classes/Reservation.php` | Halaman daftar (filter + tombol aksi sesuai status: Konfirmasi, Selesai, Pesanan, Ubah, Batalkan) dan halaman form terpisah. `Reservation::create()`/`update()` memeriksa format, jam operasional, waktu lewat, pelanggan, meja Aktif, kapasitas, dan tumpang tindih. `changeStatus()` menegakkan alur status, menolak konfirmasi untuk tanggal yang sudah lewat, menolak "Selesai" sebelum tanggalnya atau selama masih ada pesanan Diproses, dan menolak pembatalan jika sudah ada pesanan. Setelah ada pesanan, pelanggan dan tanggal reservasi dikunci. Di form, JavaScript menonaktifkan meja yang kapasitasnya kurang. |
+| Pesanan | `pages/orders.php`, `classes/Order.php` | Form diawali pilihan **jenis pesanan**: *Dari reservasi* (pilih reservasi Dikonfirmasi, lalu pelanggan, meja, jadwal, dan jumlah tamu langsung tampil sebagai info) atau *Tanpa reservasi/walk-in* (pemilih pelanggan + tanggal). Bagian yang tidak dipakai dinonaktifkan dengan `fieldset disabled`. Ada tombol −/+ dan pratinjau subtotal/total. Bisa dibuka langsung dari tombol "Pesanan" di daftar reservasi. `Order::create()` mengambil pelanggan & tanggal dari reservasi (data pelanggan dari form diabaikan), mengambil harga dari database, lalu menyimpan pesanan dan item dalam satu transaksi. `Order::updateStatus()` menyelesaikan reservasi secara otomatis (dalam transaksi yang sama) saat pesanan terakhirnya selesai. |
 | Laporan | `pages/reports.php` | Filter rentang tanggal dan pintasan periode. Total nilai pesanan tidak menghitung pesanan Dibatalkan. Tombol Cetak memanggil `window.print()`; navbar, form, dan tombol disembunyikan saat dicetak. |
 
 ## 6. Penerapan Pemrograman Terstruktur, OOP, Library, dan Database
@@ -124,7 +132,7 @@ Logika yang dipakai berulang dipisah menjadi fungsi kecil di `includes/functions
 - Perhitungan: `calculateSubtotal()`, `calculateOrderTotal()`, `buildOrderItems()`.
 - Validasi dasar: `validatePrice()`, `validateQuantity()` (1–100), `validateGuestCount()`, `isValidDate()`, `isValidTime()`, `isValidPhone()`, `isValidEmail()`, `validateOrderDate()`.
 - Aturan waktu reservasi: `timeToMinutes()`, `isWithinOperatingHours()`, `latestReservationStart()`, `isPastDateTime()` (waktu "sekarang" dikirim sebagai parameter agar bisa diuji).
-- Aturan bisnis: `hasReservationConflict()` (tumpang tindih slot 2 jam) dan `canChangeStatus()` (alur status).
+- Aturan bisnis: `hasReservationConflict()` (tumpang tindih slot 2 jam), `canChangeStatus()` (alur status), `validateReservationForOrder()` (reservasi boleh dipesan), dan `shouldCompleteReservation()` (penyelesaian otomatis reservasi).
 - Validasi per entitas: `validateCustomerData()`, `validateTableData()`, `validateMenuData()`, `validateReservationData()`, `validateDateRange()`. Semuanya mengembalikan daftar pesan error.
 - Helper tampilan: `e()` (escape HTML), `formatRupiah()`, `statusBadge()`, `pageHeader()`, `emptyState()`, `flashResult()`, `showErrors()`, `actionButton()`.
 
@@ -206,7 +214,7 @@ Berikut masalah yang benar-benar ditemui selama pengembangan dan pengujian.
 - **Gejala**: setelah `hasReservationConflict()` diubah dari "jam persis sama" menjadi "tumpang tindih dalam 2 jam", unit test lama dijalankan dan menghasilkan `[FAIL] Waktu berbeda pada meja sama diterima` (`40 PASS, 1 FAIL`, exit code 1).
 - **Penyebab**: test lama mengharapkan reservasi 20:00 diterima walaupun sudah ada reservasi 19:00 di meja yang sama. Dengan aturan baru, 20:00 masih berada di dalam slot 19:00–21:00, jadi penolakan justru perilaku yang benar. Yang perlu diperbarui adalah harapan test-nya, bukan kodenya.
 - **Perbaikan**: test lama diganti dengan kasus batas yang lebih jelas: 19:00 vs 20:30 dan 17:30 vs 19:00 harus ditolak, sedangkan 19:00 vs 21:00 dan 17:00 vs 19:00 (tepat bersambung) harus diterima.
-- **Verifikasi**: semua 68 pengujian PASS. Sebagai pembuktian, aturan bentrok sengaja dikembalikan ke "jam persis sama" pada salinan sementara: dua test tumpang tindih langsung gagal (`66 PASS, 2 FAIL`, exit code 1).
+- **Verifikasi**: semua pengujian PASS (68 pengujian pada saat itu). Sebagai pembuktian, aturan bentrok sengaja dikembalikan ke "jam persis sama" pada salinan sementara: dua test tumpang tindih langsung gagal (`66 PASS, 2 FAIL`, exit code 1).
 
 ### Debugging 5 — Halaman melebar ke samping di layar ponsel
 
@@ -214,6 +222,25 @@ Berikut masalah yang benar-benar ditemui selama pengembangan dan pengujian.
 - **Analisis**: dengan skrip Playwright diukur lebar setiap elemen. Kontainer `.table-responsive` sudah benar (lebar 366 px, isi bisa di-scroll). Penyebabnya adalah teks tersembunyi `.visually-hidden` pada tombol ikon di kolom Aksi. Elemen itu berposisi `absolute`, dan karena `.table-responsive` tidak berposisi `relative`, elemen tersebut "lolos" dari area scroll tabel dan ikut melebarkan halaman.
 - **Perbaikan**: menambahkan `.table-responsive { position: relative; }` di `assets/css/style.css`.
 - **Verifikasi**: pengukuran ulang di 9 halaman menunjukkan lebar dokumen tepat 390 px; tabel yang lebar tetap bisa di-scroll di dalam kartunya.
+
+### Debugging 6 — Pengujian alur menemukan 6 kejanggalan antara reservasi dan pesanan
+
+- **Gejala**: skrip uji alur (curl + pengecekan langsung ke database) dijalankan terhadap versi sebelumnya dan menunjukkan perilaku yang tidak masuk akal:
+  1. pesanan ditandai Selesai, tetapi reservasinya tetap Dikonfirmasi;
+  2. reservasi bisa ditandai Selesai padahal pesanannya masih Diproses;
+  3. tanggal reservasi bisa diubah ke besok setelah punya pesanan, sehingga tanggal reservasi (13-10) berbeda dengan tanggal pesanan (12-10);
+  4. pesanan baru masih bisa dibuat untuk reservasi yang sudah Selesai;
+  5. reservasi Menunggu bertanggal kemarin masih bisa dikonfirmasi;
+  6. pesanan dari reservasi tetap meminta pelanggan dipilih manual (*"Pelanggan wajib dipilih. Reservasi yang dipilih bukan milik pelanggan tersebut."*).
+- **Penyebab**: pesanan dan reservasi diperlakukan sebagai dua alur yang terpisah. Tidak ada aturan yang menghubungkan status pesanan dengan status reservasinya, dan form pesanan mengharuskan memilih pelanggan dulu baru reservasi.
+- **Perbaikan**:
+  - reservasi hanya bisa dipesan jika Dikonfirmasi (`validateReservationForOrder()`), dan pelanggan/tanggal pesanan diambil dari reservasi;
+  - form pesanan diawali pilihan "Dari reservasi" / "Tanpa reservasi";
+  - `Order::updateStatus()` menyelesaikan reservasi otomatis bila tidak ada pesanan lain yang Diproses (`shouldCompleteReservation()`);
+  - `Reservation::changeStatus()` menolak Selesai manual selama ada pesanan Diproses dan menolak konfirmasi tanggal lewat;
+  - tanggal reservasi dikunci setelah ada pesanan;
+  - tombol Batalkan disembunyikan untuk reservasi berpesanan.
+- **Verifikasi**: 10 unit test baru, 16 skenario E2E baru (termasuk dua pesanan untuk satu reservasi: reservasi baru selesai setelah pesanan kedua selesai), dan pengujian lewat browser sungguhan (Konfirmasi → Pesanan → info pelanggan & meja otomatis → Simpan → Tandai Selesai → *"Reservasi terkait otomatis ditandai selesai."*). Semua lulus.
 
 ## 8. Hasil Pengujian Unit (J.620100.033.02)
 
@@ -229,8 +256,9 @@ Dijalankan pada PHP 8.3.6 CLI. Exit code: **0**.
 | Penolakan reservasi bentrok (slot 2 jam) | 10 |
 | Jam operasional dan waktu reservasi | 11 |
 | Alur status reservasi dan pesanan | 11 |
+| Pesanan dari reservasi dan penyelesaian otomatis | 10 |
 | Validasi data lain | 7 |
-| **Total** | **68 PASS, 0 FAIL** |
+| **Total** | **78 PASS, 0 FAIL** |
 
 ```text
 == Perhitungan subtotal dan total pesanan ==
@@ -306,6 +334,18 @@ Dijalankan pada PHP 8.3.6 CLI. Exit code: **0**.
 [PASS] Tanggal pesanan hari ini diterima
 [PASS] Tanggal pesanan besok ditolak
 
+== Pesanan dari reservasi dan penyelesaian otomatis ==
+[PASS] Reservasi Dikonfirmasi hari ini boleh dibuatkan pesanan
+[PASS] Reservasi Dikonfirmasi kemarin masih boleh dibuatkan pesanan
+[PASS] Reservasi Menunggu (belum dikonfirmasi) ditolak
+[PASS] Reservasi Selesai ditolak
+[PASS] Reservasi Dibatalkan ditolak
+[PASS] Reservasi Dikonfirmasi untuk besok ditolak
+[PASS] Pesanan terakhir selesai -> reservasi Dikonfirmasi ikut Selesai
+[PASS] Masih ada pesanan Diproses -> reservasi belum diselesaikan
+[PASS] Reservasi yang sudah Selesai tidak diproses ulang
+[PASS] Reservasi Dibatalkan tidak diselesaikan otomatis
+
 == Validasi data lain ==
 [PASS] Data pelanggan valid tanpa email diterima
 [PASS] Email pelanggan tidak valid ditolak
@@ -315,22 +355,23 @@ Dijalankan pada PHP 8.3.6 CLI. Exit code: **0**.
 [PASS] Rentang tanggal terbalik ditolak
 [PASS] Escape HTML mencegah tag script
 
-Hasil: 68 PASS, 0 FAIL dari 68 pengujian.
+Hasil: 78 PASS, 0 FAIL dari 78 pengujian.
 ```
 
-Pemeriksaan bahwa runner benar-benar mendeteksi kegagalan: pada salinan sementara, `calculateSubtotal()` sengaja dirusak (perkalian diganti penjumlahan). Hasilnya `63 PASS, 5 FAIL dari 68 pengujian` dengan exit code **1**.
+Pemeriksaan bahwa runner benar-benar mendeteksi kegagalan: pada salinan sementara, `calculateSubtotal()` sengaja dirusak (perkalian diganti penjumlahan). Hasilnya `73 PASS, 5 FAIL dari 78 pengujian` dengan exit code **1**.
 
 ### Pengujian end-to-end (tambahan)
 
-Dilakukan di lingkungan pengembangan dengan MariaDB 10.11.14 dan server bawaan PHP (`php -S`). Database diimpor dari `database.sql`, lalu skenario HTTP diuji dengan curl. Versi awal aplikasi lulus 48/48 skenario. Setelah perbaikan alur reservasi dan pesanan, skrip diperbarui menjadi 61 skenario (61 OK). Setelah fitur pelanggan baru dari form ditambahkan, skrip menjadi **74 skenario** dengan hasil **74 OK, 0 FAIL**, tanpa warning/notice PHP di log server. Skenario yang diuji antara lain:
+Dilakukan di lingkungan pengembangan dengan MariaDB 10.11.14 dan server bawaan PHP (`php -S`). Database diimpor dari `database.sql`, lalu skenario HTTP diuji dengan curl. Versi awal aplikasi lulus 48/48 skenario. Setelah perbaikan alur reservasi dan pesanan, skrip diperbarui menjadi 61 skenario (61 OK). Setelah fitur pelanggan baru dari form ditambahkan, skrip menjadi 74 skenario (74 OK). Setelah alur pesanan dari reservasi diperbaiki, skrip menjadi **90 skenario** dengan hasil **90 OK, 0 FAIL**, tanpa warning/notice PHP di log server. Skenario yang diuji antara lain:
 
 - Sepuluh halaman/tampilan (termasuk form reservasi dan form pesanan) merespons HTTP 200. Dashboard menampilkan pendapatan hari ini Rp 120.000 dari data contoh.
 - Reservasi: berhasil dibuat dengan status Menunggu; tumpang tindih 2 jam (19:00 vs 18:00) ditolak; slot yang bersambung (17:00, berakhir 19:00) diterima; tanggal yang sudah lewat, jam 09:00, dan jam 21:00 ditolak; tamu melebihi kapasitas dan meja Nonaktif ditolak; form tetap terisi setelah gagal; mengubah reservasi sendiri tidak dianggap bentrok; form tidak lagi memiliki pilihan status.
 - Alur status reservasi: Konfirmasi berhasil; lompat dari Menunggu ke Selesai ditolak; Selesai sebelum tanggal reservasi ditolak; membatalkan reservasi yang sudah punya pesanan ditolak; mengubah reservasi Selesai ditolak; mengganti pelanggan pada reservasi berpesanan ditolak; membatalkan dua kali ditolak; filter Hari Ini dan filter status bekerja.
-- Pesanan: form bisa diisi otomatis dari reservasi; tanggal pesanan dipaksa sama dengan tanggal reservasi walaupun form mengirim tanggal lain; detail menampilkan meja reservasi; total Rp 65.000 benar. Ditolak bila: reservasi masih besok, reservasi berstatus Menunggu, reservasi milik pelanggan lain, tanggal pesanan di masa depan, jumlah 101, menu tidak tersedia, atau tanpa item.
-- Alur status pesanan: Diproses → Selesai berhasil dan tombol ubah status hilang; Selesai → Diproses ditolak; pesanan dapat dibatalkan, setelah itu reservasinya boleh dibatalkan; filter status pesanan bekerja.
+- Pesanan dari reservasi: tombol Pesanan membuka form dengan jenis "Dari reservasi", reservasi terpilih, dan info pelanggan & meja langsung tampil; pelanggan otomatis = pemilik reservasi (customer_id kiriman form diabaikan); tanggal pesanan = tanggal reservasi; detail menampilkan meja; total Rp 65.000 benar. Ditolak bila: reservasi masih besok, reservasi Menunggu (harus dikonfirmasi dulu), reservasi sudah Selesai, atau jenis "Dari reservasi" tanpa memilih reservasi. Pesanan walk-in ditolak bila tanggal di masa depan atau pelanggan belum dipilih; jumlah 101, menu tidak tersedia, dan tanpa item juga ditolak.
+- Penyelesaian otomatis: dengan dua pesanan untuk satu reservasi, reservasi tidak bisa diselesaikan manual selama ada pesanan Diproses; setelah pesanan pertama selesai reservasi masih Dikonfirmasi; setelah pesanan terakhir selesai muncul pesan *"Reservasi terkait otomatis ditandai selesai"* dan status di database Selesai; reservasi Selesai tidak lagi punya tombol Pesanan. Membatalkan pesanan tidak menyelesaikan reservasi; setelah itu reservasi tanpa pesanan aktif bisa diselesaikan manual. Mengubah tanggal reservasi berpesanan ditolak. Reservasi Menunggu bertanggal kemarin tidak bisa dikonfirmasi (diberi tanda "Tanggal sudah lewat") tetapi masih bisa dibatalkan.
+- Alur status pesanan: Diproses → Selesai berhasil dan tombol ubah status hilang; Selesai → Diproses ditolak; pesanan dapat dibatalkan; filter status pesanan bekerja.
 - Pelanggan baru dari form: reservasi + pelanggan baru berhasil dan pelanggan muncul di data Pelanggan; jika reservasi tidak valid (jam 09:00) atau pesanan tanpa item, pelanggan baru **tidak** tersimpan dan form tetap terisi; telepon yang sudah terdaftar dan telepon tidak valid ditolak; pesanan walk-in + pelanggan baru berhasil; menambah pelanggan dengan telepon yang sudah terdaftar di halaman Pelanggan ditolak.
-- Data master dan laporan: menonaktifkan meja yang punya reservasi mendatang ditolak; pencarian pelanggan bekerja; hapus pelanggan berelasi ditolak; nama berisi `<b>` tampil ter-escape; laporan hari ini menampilkan total Rp 120.000 (pesanan Dibatalkan tidak dihitung); rentang tanggal terbalik ditolak.
+- Data master dan laporan: menonaktifkan meja yang punya reservasi mendatang ditolak; pencarian pelanggan bekerja; hapus pelanggan berelasi ditolak; nama berisi `<b>` tampil ter-escape; laporan hari ini menampilkan total Rp 110.000 (pesanan Dibatalkan tidak dihitung); rentang tanggal terbalik ditolak.
 
 **Uji rollback transaksi**: trigger sementara pada `order_items` dipasang untuk memaksa INSERT gagal, lalu `Order::create()` dipanggil. Hasil: pengguna menerima pesan "Pesanan gagal disimpan. Silakan coba lagi.", dan jumlah baris `restaurant_orders` tetap sama sebelum dan sesudah (**ROLLBACK OK**). Catatan: setelah aturan "tanggal pesanan tidak boleh melebihi hari ini" ditambahkan, skrip uji lama sempat ditolak oleh validasi sebelum transaksi dimulai (sehingga belum benar-benar menguji rollback). Skrip diperbaiki agar memakai tanggal hari ini, lalu dijalankan ulang dengan hasil di atas. Trigger dihapus setelah pengujian. Uji yang sama diulang untuk pesanan **bersama pelanggan baru**: jumlah baris `customers` dan `restaurant_orders` sama-sama tidak berubah (**ROLLBACK OK**), jadi pelanggan baru ikut dibatalkan.
 
@@ -340,9 +381,9 @@ Dilakukan di lingkungan pengembangan dengan MariaDB 10.11.14 dan server bawaan P
 
 ## 9. Kesimpulan
 
-Aplikasi Sistem Pemesanan Restoran sudah memenuhi kebutuhan pada PRD dan alur kerjanya sudah dirapikan: reservasi mengikuti jam operasional, slot 2 jam, dan alur status yang jelas; pesanan hanya bisa dikaitkan dengan reservasi yang tamunya sudah datang, tersimpan dalam transaksi dengan total yang benar, dan harga terkunci saat pesanan dibuat; laporan dapat difilter per tanggal serta dicetak.
+Aplikasi Sistem Pemesanan Restoran sudah memenuhi kebutuhan pada PRD dan alur kerjanya sudah dirapikan: reservasi mengikuti jam operasional, slot 2 jam, dan alur status yang jelas; pesanan dibuat dari reservasi yang sudah dikonfirmasi (pelanggan dan meja otomatis), reservasi otomatis selesai saat pesanannya selesai, pesanan tersimpan dalam transaksi dengan total yang benar, dan harga terkunci saat pesanan dibuat; laporan dapat difilter per tanggal serta dicetak.
 
-Proyek ini menunjukkan penerapan pemrograman terstruktur (fungsi validasi, perhitungan, dan aturan waktu), OOP (`BaseModel` dan class turunannya), library Bootstrap 5, akses database dengan PDO (prepared statement, relasi, dan transaksi), debugging yang terdokumentasi, serta unit test yang dapat dijalankan ulang dengan hasil 68 PASS dan 0 FAIL.
+Proyek ini menunjukkan penerapan pemrograman terstruktur (fungsi validasi, perhitungan, dan aturan waktu), OOP (`BaseModel` dan class turunannya), library Bootstrap 5, akses database dengan PDO (prepared statement, relasi, dan transaksi), debugging yang terdokumentasi, serta unit test yang dapat dijalankan ulang dengan hasil 78 PASS dan 0 FAIL.
 
 Pengembangan lanjutan yang mungkin dilakukan jika aplikasi dipakai di luar demonstrasi: login dan hak akses, proteksi CSRF, edit item pesanan, serta paginasi data.
 
@@ -356,5 +397,5 @@ Pengembangan lanjutan yang mungkin dilakukan jika aplikasi dipakai di luar demon
 | J.620100.019.02 | Bootstrap 5.3.3 dan Bootstrap Icons (CDN) di seluruh halaman. |
 | J.620100.021.02 | `database.sql` (PK, FK, DECIMAL), `config/database.php` (PDO), transaksi di `Order::create()`. |
 | J.620100.023.02 | `README.md`, komentar seperlunya, `docs/laporan.md`, `docs/presentasi.md`, panduan DOCX/PPT. |
-| J.620100.025.02 | Bagian 7 laporan ini (5 contoh debugging). |
-| J.620100.033.02 | `tests/test_functions.php` (68 pengujian, PASS/FAIL, exit code). |
+| J.620100.025.02 | Bagian 7 laporan ini (6 contoh debugging). |
+| J.620100.033.02 | `tests/test_functions.php` (78 pengujian, PASS/FAIL, exit code). |

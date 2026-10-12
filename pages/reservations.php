@@ -89,7 +89,7 @@ require __DIR__ . '/../includes/header.php';
 ?>
 
 <?php if ($view === 'list'): ?>
-    <?= pageHeader('Reservasi Meja', 'bi-calendar-check', 'Alur status: Menunggu → Dikonfirmasi (tamu datang) → Selesai.',
+    <?= pageHeader('Reservasi Meja', 'bi-calendar-check', 'Alur: Menunggu → Dikonfirmasi (tamu datang) → buat pesanan → Selesai (otomatis saat pesanan selesai).',
         '<a href="' . e(pageUrl('reservations', ['action' => 'create'])) . '" class="btn btn-primary"><i class="bi bi-calendar-plus me-1"></i>Buat Reservasi</a>') ?>
 
     <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
@@ -137,6 +137,8 @@ require __DIR__ . '/../includes/header.php';
                         $status = $reservation['status'];
                         $extra = ['scope' => $scope, 'status_filter' => $statusFilter];
                         $isPastOrToday = $reservation['reservation_date'] <= $today;
+                        $isPastDate = $reservation['reservation_date'] < $today;
+                        $hasOpenOrders = (int) $reservation['open_order_count'] > 0;
                         $canOrder = in_array($status, ORDERABLE_RESERVATION_STATUSES, true) && $isPastOrToday
                             && $reservation['reservation_date'] >= date('Y-m-d', strtotime('-30 days'));
                         ?>
@@ -144,6 +146,9 @@ require __DIR__ . '/../includes/header.php';
                             <td class="text-nowrap">
                                 <div class="fw-semibold"><?= e(formatDate($reservation['reservation_date'])) ?></div>
                                 <div class="small text-muted"><i class="bi bi-clock me-1"></i><?= e(formatTime($reservation['reservation_time'])) ?></div>
+                                <?php if ($isPastDate && in_array($status, ACTIVE_RESERVATION_STATUSES, true)): ?>
+                                    <div class="small text-danger"><i class="bi bi-exclamation-circle me-1"></i>Tanggal sudah lewat</div>
+                                <?php endif; ?>
                             </td>
                             <td>
                                 <div class="fw-semibold"><?= e($reservation['customer_name']) ?></div>
@@ -159,13 +164,16 @@ require __DIR__ . '/../includes/header.php';
                                 <?php if ((int) $reservation['order_count'] > 0): ?>
                                     <div class="small text-muted mt-1"><i class="bi bi-receipt me-1"></i><?= (int) $reservation['order_count'] ?> pesanan</div>
                                 <?php endif; ?>
+                                <?php if ($status === 'Dikonfirmasi' && $hasOpenOrders): ?>
+                                    <div class="small text-muted"><i class="bi bi-hourglass-split me-1"></i>Selesai otomatis saat pesanan selesai</div>
+                                <?php endif; ?>
                             </td>
                             <td class="text-end">
                                 <div class="d-inline-flex flex-wrap justify-content-end gap-1">
-                                    <?php if ($status === 'Menunggu'): ?>
+                                    <?php if ($status === 'Menunggu' && !$isPastDate): ?>
                                         <?= actionButton('status', $rid, 'Konfirmasi', 'btn-success', '', $extra + ['status' => 'Dikonfirmasi'], 'bi-check2') ?>
                                     <?php endif; ?>
-                                    <?php if ($status === 'Dikonfirmasi' && $isPastOrToday): ?>
+                                    <?php if ($status === 'Dikonfirmasi' && $isPastOrToday && !$hasOpenOrders): ?>
                                         <?= actionButton('status', $rid, 'Selesai', 'btn-outline-success', 'Tandai reservasi ini selesai?', $extra + ['status' => 'Selesai'], 'bi-flag') ?>
                                     <?php endif; ?>
                                     <?php if ($canOrder): ?>
@@ -173,7 +181,9 @@ require __DIR__ . '/../includes/header.php';
                                     <?php endif; ?>
                                     <?php if (in_array($status, ACTIVE_RESERVATION_STATUSES, true)): ?>
                                         <a href="<?= e(pageUrl('reservations', ['action' => 'edit', 'id' => $rid])) ?>" class="btn btn-sm btn-outline-secondary" title="Ubah"><i class="bi bi-pencil"></i><span class="visually-hidden">Ubah</span></a>
-                                        <?= actionButton('status', $rid, 'Batalkan', 'btn-outline-danger', 'Batalkan reservasi ' . $reservation['customer_name'] . '?', $extra + ['status' => 'Dibatalkan'], 'bi-x-lg', true) ?>
+                                        <?php if ((int) $reservation['order_count'] === 0): ?>
+                                            <?= actionButton('status', $rid, 'Batalkan', 'btn-outline-danger', 'Batalkan reservasi ' . $reservation['customer_name'] . '?', $extra + ['status' => 'Dibatalkan'], 'bi-x-lg', true) ?>
+                                        <?php endif; ?>
                                     <?php endif; ?>
                                     <?php if (in_array($status, ['Selesai', 'Dibatalkan'], true) && !$canOrder): ?>
                                         <span class="text-muted small">—</span>
@@ -226,7 +236,10 @@ require __DIR__ . '/../includes/header.php';
                             <div class="col-md-6 mb-3">
                                 <label for="reservation_date" class="form-label">Tanggal</label>
                                 <input type="date" class="form-control" id="reservation_date" name="reservation_date" required
-                                       min="<?= e(min($today, $existing['reservation_date'] ?? $today)) ?>" value="<?= e($form['reservation_date']) ?>">
+                                       min="<?= e(min($today, $existing['reservation_date'] ?? $today)) ?>" value="<?= e($form['reservation_date']) ?>" <?= $customerLocked ? 'readonly' : '' ?>>
+                                <?php if ($customerLocked): ?>
+                                    <div class="form-text">Tanggal dikunci karena reservasi ini sudah memiliki pesanan.</div>
+                                <?php endif; ?>
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label for="reservation_time" class="form-label">Jam Mulai</label>

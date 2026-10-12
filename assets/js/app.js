@@ -22,7 +22,6 @@ document.addEventListener('DOMContentLoaded', function () {
                     field.required = active;
                 });
             });
-            picker.dispatchEvent(new CustomEvent('customer-mode-change', { bubbles: true }));
         };
         picker.querySelectorAll('input[name="customer_mode"]').forEach(function (radio) {
             radio.addEventListener('change', applyMode);
@@ -57,65 +56,47 @@ document.addEventListener('DOMContentLoaded', function () {
     if (!orderForm) {
         return;
     }
-    var customerSelect = document.getElementById('customer_id');
-    var reservationSelect = document.getElementById('reservation_id');
-    var orderDate = document.getElementById('order_date');
-    var dateHint = document.getElementById('order-date-hint');
-    var reservationHint = document.getElementById('reservation-hint');
-    var picker = orderForm.querySelector('.customer-picker');
-    var isNewCustomer = function () {
-        return picker !== null && currentCustomerMode(picker) === 'new';
-    };
 
-    // Reservasi hanya menampilkan milik pelanggan yang dipilih (pelanggan baru belum punya reservasi)
-    var filterReservations = function () {
-        var newCustomer = isNewCustomer();
-        reservationSelect.disabled = newCustomer;
-        reservationHint.textContent = newCustomer
-            ? 'Pelanggan baru belum memiliki reservasi.'
-            : 'Hanya reservasi pelanggan terpilih yang sudah Dikonfirmasi/Selesai.';
-        if (newCustomer) {
-            reservationSelect.value = '';
-        }
-        var customerId = customerSelect.value;
-        Array.prototype.forEach.call(reservationSelect.options, function (option) {
-            if (!option.dataset.customer) {
+    // Jenis pesanan: "Dari reservasi" atau "Tanpa reservasi". Bagian yang tidak dipakai dinonaktifkan
+    // (fieldset disabled) agar isiannya tidak divalidasi dan tidak ikut terkirim.
+    var applyOrderType = function () {
+        var checked = orderForm.querySelector('input[name="order_type"]:checked');
+        var type = checked ? checked.value : 'walkin';
+        orderForm.querySelectorAll('[data-order-section]').forEach(function (section) {
+            var active = section.dataset.orderSection === type;
+            section.hidden = !active;
+            section.disabled = !active;
+        });
+    };
+    orderForm.querySelectorAll('input[name="order_type"]').forEach(function (radio) {
+        radio.addEventListener('change', applyOrderType);
+    });
+    applyOrderType();
+
+    // Memilih reservasi langsung menampilkan pelanggan, meja, jadwal, dan jumlah tamu
+    var reservationSelect = document.getElementById('reservation_id');
+    var reservationInfo = document.getElementById('reservation-info');
+    if (reservationSelect && reservationInfo) {
+        var showReservationInfo = function () {
+            var option = reservationSelect.selectedOptions[0];
+            if (!option || !option.value) {
+                reservationInfo.hidden = true;
                 return;
             }
-            var visible = customerId !== '' && option.dataset.customer === customerId;
-            option.hidden = !visible;
-            option.disabled = !visible;
-        });
-        var selected = reservationSelect.selectedOptions[0];
-        if (selected && selected.disabled) {
-            reservationSelect.value = '';
-        }
-        syncOrderDate();
-    };
-
-    // Jika reservasi dipilih, tanggal pesanan mengikuti tanggal reservasi
-    var syncOrderDate = function () {
-        var selected = reservationSelect.selectedOptions[0];
-        if (selected && selected.dataset.date) {
-            orderDate.value = selected.dataset.date;
-            orderDate.readOnly = true;
-            dateHint.textContent = 'Mengikuti tanggal reservasi.';
-        } else {
-            orderDate.readOnly = false;
-            dateHint.textContent = 'Tidak boleh melebihi hari ini.';
-        }
-    };
-
-    customerSelect.addEventListener('change', filterReservations);
-    orderForm.addEventListener('customer-mode-change', filterReservations);
-    reservationSelect.addEventListener('change', function () {
-        var selected = reservationSelect.selectedOptions[0];
-        if (selected && selected.dataset.customer) {
-            customerSelect.value = selected.dataset.customer;
-        }
-        syncOrderDate();
-    });
-    filterReservations();
+            var values = {
+                customer: option.dataset.customer + ' (' + option.dataset.phone + ')',
+                table: option.dataset.table,
+                schedule: option.dataset.schedule,
+                guests: option.dataset.guests + ' orang'
+            };
+            Object.keys(values).forEach(function (field) {
+                reservationInfo.querySelector('[data-info="' + field + '"]').textContent = values[field];
+            });
+            reservationInfo.hidden = false;
+        };
+        reservationSelect.addEventListener('change', showReservationInfo);
+        showReservationInfo();
+    }
 
     // Pratinjau subtotal dan total
     var formatRupiah = function (value) {
