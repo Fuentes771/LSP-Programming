@@ -3,6 +3,7 @@ defined('APP_RUNNING') or exit('Akses langsung tidak diizinkan.');
 
 $reservationModel = new Reservation($db);
 $tableModel = new RestaurantTable($db);
+$customerModel = new Customer($db);
 $today = date('Y-m-d');
 $view = query('action', 'list');
 $scope = in_array(query('scope'), ['today', 'upcoming', 'all'], true) ? query('scope') : 'upcoming';
@@ -13,6 +14,8 @@ $form = [
     'reservation_time' => '', 'guest_count' => '', 'notes' => '',
 ];
 $existing = null;
+$customerMode = 'existing';
+$newCustomer = ['name' => '', 'phone' => '', 'email' => ''];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $listUrl = pageUrl('reservations', array_filter(['scope' => input('scope'), 'status' => input('status_filter')]));
@@ -32,9 +35,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $form[$field] = input($field);
     }
     $id = $form['id'] !== '' ? (int) $form['id'] : null;
-    $errors = $id === null ? $reservationModel->create($form) : $reservationModel->update($id, $form);
+    if ($id === null) {
+        // Reservasi baru: pelanggan bisa dipilih dari daftar atau langsung dibuat (pelanggan baru)
+        $customerMode = input('customer_mode') === 'new' ? 'new' : 'existing';
+        $newCustomer = ['name' => input('new_customer_name'), 'phone' => input('new_customer_phone'), 'email' => input('new_customer_email')];
+        $result = $customerModel->runWithCustomer($customerMode, $form['customer_id'], $newCustomer,
+            function (string $customerId) use ($form, $reservationModel): array {
+                return $reservationModel->create(['customer_id' => $customerId] + $form);
+            });
+        $errors = $result['errors'];
+    } else {
+        $errors = $reservationModel->update($id, $form);
+    }
     if (!$errors) {
-        setFlash('success', $id ? 'Reservasi berhasil diubah.' : 'Reservasi berhasil dibuat dengan status Menunggu.');
+        $successMessage = $id ? 'Reservasi berhasil diubah.' : 'Reservasi berhasil dibuat dengan status Menunggu.';
+        if ($customerMode === 'new') {
+            $successMessage .= ' Pelanggan baru "' . $newCustomer['name'] . '" ditambahkan ke data Pelanggan.';
+        }
+        setFlash('success', $successMessage);
         redirect(pageUrl('reservations', ['scope' => $form['reservation_date'] === $today ? 'today' : 'upcoming']));
     }
     $view = $id === null ? 'create' : 'edit';
@@ -56,9 +74,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 if ($view === 'create' || $view === 'edit') {
-    $customers = (new Customer($db))->all();
+    $customers = $customerModel->all();
     $tables = $tableModel->active();
     $customerLocked = $existing !== null && (int) $existing['order_count'] > 0;
+    $allowNewCustomer = $view === 'create';
     $pageTitle = $view === 'edit' ? 'Ubah Reservasi' : 'Buat Reservasi';
 } else {
     $view = 'list';
@@ -182,27 +201,7 @@ require __DIR__ . '/../includes/header.php';
                         <input type="hidden" name="action" value="save">
                         <input type="hidden" name="id" value="<?= e($form['id']) ?>">
 
-                        <div class="mb-3">
-                            <label for="customer_id" class="form-label">Pelanggan</label>
-                            <?php if ($customerLocked): ?>
-                                <input type="hidden" name="customer_id" value="<?= e($form['customer_id']) ?>">
-                            <?php endif; ?>
-                            <select class="form-select" id="customer_id" <?= $customerLocked ? 'disabled' : 'name="customer_id" required' ?>>
-                                <option value="">-- Pilih Pelanggan --</option>
-                                <?php foreach ($customers as $customer): ?>
-                                    <option value="<?= (int) $customer['id'] ?>" <?= $form['customer_id'] === (string) $customer['id'] ? 'selected' : '' ?>>
-                                        <?= e($customer['name']) ?> (<?= e($customer['phone']) ?>)
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
-                            <div class="form-text">
-                                <?php if ($customerLocked): ?>
-                                    Pelanggan tidak dapat diganti karena reservasi ini sudah memiliki pesanan.
-                                <?php else: ?>
-                                    Pelanggan belum terdaftar? <a href="<?= e(pageUrl('customers')) ?>">Tambah pelanggan</a> terlebih dahulu.
-                                <?php endif; ?>
-                            </div>
-                        </div>
+                        <?php require __DIR__ . '/../includes/customer_picker.php'; ?>
 
                         <div class="row">
                             <div class="col-md-4 mb-3">

@@ -95,7 +95,7 @@ Yang **tidak** dipakai (sesuai batasan spesifikasi): Laravel, React, Docker, RES
 | Kode | Fitur | Rincian |
 |---|---|---|
 | F1 | Dashboard | Kartu total pelanggan, meja, reservasi, pesanan; kartu **reservasi hari ini**, **pesanan diproses**, **pendapatan hari ini**; tabel reservasi hari ini; tombol cepat Buat Reservasi & Buat Pesanan. |
-| F2 | Data Pelanggan | Lihat, **cari** (nama/telepon), tambah, ubah, hapus. Data: nama, nomor telepon, email (boleh kosong). Tabel menampilkan jumlah reservasi & pesanan per pelanggan. |
+| F2 | Data Pelanggan | Lihat, **cari** (nama/telepon), tambah, ubah, hapus. Data: nama, nomor telepon (**unik**), email (boleh kosong). Pelanggan baru juga bisa ditambahkan langsung dari form reservasi/pesanan. Tabel menampilkan jumlah reservasi & pesanan per pelanggan. |
 | F3 | Data Meja | Lihat, **cari**, tambah, ubah, hapus. Data: nomor meja (unik), kapasitas, status **Aktif/Nonaktif**. Tabel menampilkan jumlah reservasi aktif mendatang. |
 | F4 | Data Menu | Lihat, **cari**, tambah, ubah, hapus. Data: nama menu, harga, status **Tersedia/Tidak Tersedia**. |
 | F5 | Reservasi Meja | Halaman **daftar** (filter **Hari Ini / Akan Datang / Semua** + filter status, tombol aksi sesuai status) dan halaman **form** terpisah untuk buat/ubah. Data: pelanggan, jumlah tamu, meja, tanggal, jam mulai, catatan (opsional). Status diubah lewat tombol **Konfirmasi**, **Selesai**, **Batalkan**. |
@@ -142,7 +142,7 @@ Zona waktu aplikasi: **Asia/Jakarta** (untuk menentukan "hari ini" dan jam yang 
 
 **Pelanggan**
 - Nama wajib diisi, maksimal 100 karakter.
-- Nomor telepon 8–15 digit angka, boleh diawali `+`.
+- Nomor telepon 8–15 digit angka, boleh diawali `+`, dan **unik**: *"Nomor telepon 082345678901 sudah terdaftar atas nama Siti Aminah."*
 - Email boleh kosong; jika diisi harus berformat email valid.
 
 **Meja**
@@ -155,6 +155,13 @@ Zona waktu aplikasi: **Asia/Jakarta** (untuk menentukan "hari ini" dan jam yang 
 - Nama wajib, maksimal 100 karakter.
 - Harga berupa angka **> 0** (nol/negatif/bukan angka ditolak).
 - Status ketersediaan `0` atau `1`.
+
+**Pelanggan baru langsung dari form reservasi/pesanan** (`includes/customer_picker.php`, `Customer::runWithCustomer()`)
+- Form reservasi (mode buat) dan form pesanan punya tombol pilihan **Pelanggan terdaftar** / **Pelanggan baru**. Pelanggan baru diisi nama, telepon, email opsional.
+- Pelanggan baru dibuat lebih dulu (validasi sama seperti halaman Pelanggan, pesan diberi awalan *"Pelanggan baru: "*), lalu reservasi/pesanan dibuat, **dalam satu transaksi**. Jika reservasi/pesanan gagal (validasi atau error database), pelanggan baru **ikut dibatalkan** dan form tetap terisi.
+- `Order::create()` hanya memulai transaksi sendiri jika belum berada di dalam transaksi lain.
+- Pesan sukses: *"... Pelanggan baru "Rina Kurnia" ditambahkan ke data Pelanggan."*
+- Di form pesanan, memilih Pelanggan baru menonaktifkan pilihan reservasi (pelanggan baru belum punya reservasi).
 
 **Membuat / mengubah reservasi** (`Reservation::create()` / `update()`)
 1. Validasi format: pelanggan & meja dipilih, tanggal valid (`Y-m-d`, misalnya 2026-02-30 ditolak), jam valid, jumlah tamu bilangan bulat > 0.
@@ -248,6 +255,7 @@ LSP-Programming/
 │   └── Order.php
 ├── includes/
 │   ├── functions.php         # fungsi validasi, perhitungan, helper tampilan
+│   ├── customer_picker.php   # pilihan pelanggan terdaftar / pelanggan baru (form reservasi & pesanan)
 │   ├── header.php            # <head>, Bootstrap CSS, flash message
 │   ├── navbar.php            # navigasi
 │   └── footer.php            # Bootstrap JS
@@ -304,7 +312,7 @@ Alur sebuah halaman: (1) jika request POST, proses aksi → validasi → panggil
 | Class | Tabel | Method publik | Tanggung jawab |
 |---|---|---|---|
 | `BaseModel` (abstract) | — | `count()`, `find()` | Menyimpan koneksi PDO, method umum, cek relasi & constraint |
-| `Customer` | `customers` | `all($search)`, `save()`, `delete()` | CRUD + pencarian pelanggan, jumlah reservasi/pesanan, cek relasi sebelum hapus |
+| `Customer` | `customers` | `all($search)`, `findByPhone()`, `save()`, `runWithCustomer()`, `delete()` | CRUD + pencarian pelanggan, telepon unik, pembuatan pelanggan baru bersama reservasi/pesanan dalam satu transaksi, cek relasi sebelum hapus |
 | `RestaurantTable` | `restaurant_tables` | `all($search)`, `active()`, `save()`, `delete()` | CRUD meja, nomor unik, larang nonaktif jika ada reservasi mendatang |
 | `MenuItem` | `menu_items` | `all($search)`, `available()`, `save()`, `delete()` | CRUD menu, daftar menu tersedia |
 | `Reservation` | `reservations` | `all($scope, $status)`, `findWithRelations()`, `countOn()`, `forOrder()`, `between()`, `create()`, `update()`, `changeStatus()` | Aturan jam operasional, waktu lewat, kapasitas, tumpang tindih 2 jam, alur status, laporan |
@@ -567,7 +575,7 @@ Nama database: **`restoran_db`**, engine **InnoDB**, charset **utf8mb4** (`utf8m
 | Kode | Use case | Hubungan |
 |---|---|---|
 | UC-01 | Melihat Dashboard | asosiasi dengan aktor |
-| UC-02 | Mengelola Data Pelanggan | asosiasi |
+| UC-02 | Mengelola Data Pelanggan | asosiasi; UC-02 `«extend»` UC-05 dan UC-08 (tambah pelanggan baru dari form) |
 | UC-03 | Mengelola Data Meja | asosiasi |
 | UC-04 | Mengelola Data Menu | asosiasi |
 | UC-05 | Mengelola Reservasi | asosiasi |
@@ -604,6 +612,8 @@ flowchart LR
     UC05 -. «include» .-> UC06
     UC07 -. «extend» .-> UC05
     UC08 -. «include» .-> UC09
+    UC02 -. «extend» .-> UC05
+    UC02 -. «extend» .-> UC08
     UC12 -. «extend» .-> UC11
 ```
 
@@ -615,10 +625,10 @@ flowchart LR
 | UC-02 | Mengelola Data Pelanggan | Menambah, mengubah, menghapus, mencari, dan melihat pelanggan. | Data tersimpan/terhapus; hapus ditolak bila berelasi. |
 | UC-03 | Mengelola Data Meja | Menambah, mengubah, menghapus, mencari, dan melihat meja beserta kapasitas & status. | Data tersimpan; nomor meja unik; tidak bisa dinonaktifkan jika ada reservasi mendatang. |
 | UC-04 | Mengelola Data Menu | Menambah, mengubah, menghapus, dan melihat menu beserta harga & ketersediaan. | Data tersimpan; harga > 0. |
-| UC-05 | Mengelola Reservasi | Membuat (status awal Menunggu), melihat dengan filter, dan mengubah reservasi aktif. | Reservasi tersimpan jika lolos validasi. |
+| UC-05 | Mengelola Reservasi | Membuat (status awal Menunggu; pelanggan dipilih atau langsung ditambahkan), melihat dengan filter, dan mengubah reservasi aktif. | Reservasi tersimpan jika lolos validasi. |
 | UC-06 | Memvalidasi Jadwal & Kapasitas | Sistem memeriksa jam operasional, waktu belum lewat, meja aktif, jumlah tamu ≤ kapasitas, dan tidak tumpang tindih (slot 2 jam). | Lolos atau pesan error. |
 | UC-07 | Mengubah Status Reservasi | Mengonfirmasi, menyelesaikan, atau membatalkan reservasi sesuai alur status. | Status berubah; pembatalan ditolak jika sudah ada pesanan. |
-| UC-08 | Membuat Pesanan | Memilih pelanggan, reservasi (opsional, tamu sudah datang), menu, dan jumlah. | Pesanan + item tersimpan dalam transaksi. |
+| UC-08 | Membuat Pesanan | Memilih pelanggan (atau menambah pelanggan baru), reservasi (opsional, tamu sudah datang), menu, dan jumlah. | Pesanan + item tersimpan dalam transaksi. |
 | UC-09 | Menghitung Subtotal & Total | Sistem menghitung subtotal per item dan total dari harga database. | Total tersimpan di pesanan. |
 | UC-10 | Mengubah Status Pesanan | Menandai pesanan Diproses menjadi Selesai atau Dibatalkan pada halaman detail. | Status final. |
 | UC-11 | Melihat Laporan | Memilih rentang tanggal untuk laporan reservasi & pesanan. | Laporan dan ringkasan tampil. |
@@ -636,13 +646,13 @@ Semua activity diagram memakai **2 swimlane**: **Petugas** (kiri) dan **Sistem**
 |---|---|---|
 | 1 | Petugas | ● Mulai → Membuka **Reservasi** → klik **Buat Reservasi** |
 | 2 | Sistem | Menampilkan form (pelanggan, jumlah tamu, meja **Aktif**, tanggal ≥ hari ini, jam 10:00–20:00, catatan) |
-| 3 | Petugas | Mengisi pelanggan dan jumlah tamu |
+| 3 | Petugas | Memilih **Pelanggan terdaftar** dari daftar atau memilih **Pelanggan baru** lalu mengisi nama & telepon; mengisi jumlah tamu |
 | 4 | Sistem | Menonaktifkan pilihan meja yang kapasitasnya kurang dari jumlah tamu |
 | 5 | Petugas | Memilih meja, tanggal, jam, catatan → klik **Simpan Reservasi** |
 | 6 | Sistem | ◇ Format valid, dalam jam operasional, dan belum lewat? **Tidak** → ke langkah 10 |
 | 7 | Sistem | ◇ Pelanggan ada, meja Aktif, dan jumlah tamu ≤ kapasitas? **Tidak** → ke langkah 10 |
 | 8 | Sistem | ◇ Ada reservasi aktif lain di meja & tanggal sama dengan selisih < 2 jam? **Ya** → ke langkah 10 |
-| 9 | Sistem | Menyimpan reservasi dengan status **Menunggu** → pesan berhasil → menampilkan daftar → ke langkah 11 |
+| 9 | Sistem | (Jika pelanggan baru: menyimpan pelanggan baru dalam transaksi yang sama) → menyimpan reservasi dengan status **Menunggu** → pesan berhasil → menampilkan daftar → ke langkah 11. Jika langkah 6–8 gagal, pelanggan baru tidak tersimpan. |
 | 10 | Sistem | Menampilkan **pesan error**, form tetap terisi → kembali ke langkah 5 |
 | 11 | Petugas | Saat tamu datang/reservasi dipastikan: klik **Konfirmasi** |
 | 12 | Sistem | ◇ Perpindahan status sesuai alur? **Ya** → status **Dikonfirmasi** |
@@ -679,7 +689,7 @@ flowchart TD
 |---|---|---|
 | 1 | Petugas | ● Mulai → klik **Pesanan** pada reservasi Dikonfirmasi di daftar Reservasi (atau **Buat Pesanan** di halaman Pesanan) |
 | 2 | Sistem | Menampilkan form; jika dari reservasi: pelanggan, reservasi, dan tanggal **terisi otomatis** dan tanggal terkunci |
-| 3 | Petugas | (Jika dari halaman Pesanan) memilih pelanggan → Sistem hanya menampilkan reservasi milik pelanggan itu; reservasi opsional |
+| 3 | Petugas | (Jika dari halaman Pesanan) memilih pelanggan terdaftar → Sistem hanya menampilkan reservasi milik pelanggan itu; **atau** memilih Pelanggan baru (tamu walk-in) dan mengisi nama & telepon → pilihan reservasi dinonaktifkan |
 | 4 | Petugas | Mengisi jumlah menu dengan tombol −/+ |
 | 5 | Sistem | Menampilkan **pratinjau** subtotal per menu, jumlah item, dan total |
 | 6 | Petugas | Klik **Simpan Pesanan** |
@@ -782,7 +792,8 @@ flowchart TD
 #### 5.3.2 Validasi & Simpan Reservasi — `06-flowchart-reservasi.drawio`
 
 1. **Mulai**
-2. /Input: customer_id, table_id, tanggal, jam, jumlah tamu, catatan (id jika mengubah)/
+2. /Input: customer_id **atau** data pelanggan baru, table_id, tanggal, jam, jumlah tamu, catatan (id jika mengubah)/
+   - Jika pelanggan baru: **BEGIN** → validasi & INSERT customers (telepon unik); gagal → tampilkan error → **Selesai**. Langkah berikut berjalan di dalam transaksi ini; setiap jalur "Tampilkan error" melakukan **ROLLBACK**, dan jalur berhasil melakukan **COMMIT**.
 3. ◇ Mode ubah **dan** reservasi tidak aktif (Selesai/Dibatalkan)? **Ya** → /Tampilkan "tidak dapat diubah"/ → **Selesai**
 4. ◇ Format input valid? **Tidak** → /Tampilkan error/ → **Selesai**
 5. ◇ Jam mulai 10:00–20:00? **Tidak** → /Tampilkan error jam operasional/ → **Selesai**
@@ -828,7 +839,8 @@ flowchart TD
 #### 5.3.3 Simpan Pesanan dengan Transaksi — `07-flowchart-pesanan.drawio`
 
 1. **Mulai**
-2. /Input: customer_id, reservation_id (opsional), order_date, jumlah per menu/
+2. /Input: customer_id **atau** data pelanggan baru, reservation_id (opsional), order_date, jumlah per menu/
+   - Jika pelanggan baru: transaksi dimulai lebih dulu dan pelanggan disimpan; `Order::create()` lalu **tidak** memulai transaksi sendiri, dan transaksi luar yang melakukan COMMIT/ROLLBACK (pelanggan baru ikut batal bila pesanan gagal).
 3. ◇ Pelanggan valid & ada? **Tidak** → catat error
 4. ◇ Reservasi diisi?
    - **Ya** → ◇ Ada & milik pelanggan? **Tidak** → catat error → ◇ Status Dikonfirmasi/Selesai? **Tidak** → catat error → ◇ Tanggal reservasi ≤ hari ini? **Tidak** → catat error → jika semua lolos: `order_date = reservation_date`
@@ -1168,7 +1180,7 @@ Hasil: 68 PASS, 0 FAIL dari 68 pengujian.
 
 ### 7.2 Pengujian End-to-End dan Rollback
 
-Lingkungan: MariaDB 10.11.14 + server bawaan PHP (`php -S 127.0.0.1:8000`), database diimpor dari `database.sql` (data contoh), diuji dengan skrip curl. Versi awal aplikasi lulus 48/48 skenario. Setelah perbaikan alur reservasi & pesanan, skrip diperbarui menjadi **61 skenario**: **61 OK, 0 FAIL**, tanpa warning/notice PHP di log server.
+Lingkungan: MariaDB 10.11.14 + server bawaan PHP (`php -S 127.0.0.1:8000`), database diimpor dari `database.sql` (data contoh), diuji dengan skrip curl. Versi awal aplikasi lulus 48/48 skenario. Setelah perbaikan alur reservasi & pesanan skrip menjadi 61 skenario (61 OK), lalu setelah fitur pelanggan baru dari form menjadi **74 skenario**: **74 OK, 0 FAIL**, tanpa warning/notice PHP di log server.
 
 | No | Kelompok skenario | Hasil |
 |---|---|---|
@@ -1180,8 +1192,9 @@ Lingkungan: MariaDB 10.11.14 + server bawaan PHP (`php -S 127.0.0.1:8000`), data
 | 6 | Alur status pesanan: Diproses → Selesai (tombol ubah status hilang); Selesai → Diproses ditolak; pesanan dibatalkan lalu reservasinya bisa dibatalkan; filter status pesanan | OK |
 | 7 | Data master: nonaktifkan meja yang punya reservasi mendatang ditolak; pencarian pelanggan; hapus pelanggan berelasi ditolak; nama berisi `<b>` tampil ter-escape | OK |
 | 8 | Laporan hari ini: total Rp 120.000 (pesanan Dibatalkan tidak dihitung); tombol cetak; rentang terbalik ditolak | OK |
+| 9 | Pelanggan baru dari form: reservasi + pelanggan baru berhasil dan pelanggan muncul di data Pelanggan; reservasi tidak valid / pesanan tanpa item → pelanggan baru **tidak** tersimpan, form tetap terisi; telepon terdaftar & telepon tidak valid ditolak; pesanan walk-in + pelanggan baru berhasil; telepon duplikat di halaman Pelanggan ditolak | OK |
 
-**Uji rollback transaksi:** trigger sementara pada `order_items` dipasang untuk memaksa INSERT gagal, lalu `Order::create()` dipanggil dengan tanggal hari ini. Hasil: pengguna menerima pesan "Pesanan gagal disimpan. Silakan coba lagi.", dan jumlah baris `restaurant_orders` **tetap sama** sebelum dan sesudah (**ROLLBACK OK**). Trigger dihapus setelah pengujian.
+**Uji rollback transaksi:** trigger sementara pada `order_items` dipasang untuk memaksa INSERT gagal, lalu `Order::create()` dipanggil dengan tanggal hari ini. Hasil: pengguna menerima pesan "Pesanan gagal disimpan. Silakan coba lagi.", dan jumlah baris `restaurant_orders` **tetap sama** sebelum dan sesudah (**ROLLBACK OK**). Uji diulang untuk pesanan **bersama pelanggan baru**: jumlah `customers` dan `restaurant_orders` sama-sama tidak berubah (**ROLLBACK OK**). Trigger dihapus setelah pengujian.
 
 **Pemeriksaan tampilan & interaksi:** screenshot Chromium untuk dashboard, daftar & form reservasi, form pesanan, detail pesanan, pelanggan, laporan, dan tampilan ponsel (390 px). Interaksi JavaScript: dengan 5 tamu, meja M01 & M02 otomatis tidak bisa dipilih; memilih pelanggan hanya menampilkan reservasinya; memilih reservasi mengunci tanggal; pratinjau total Rp 75.000 untuk 2 × Rp 30.000 + 3 × Rp 5.000.
 
@@ -1368,7 +1381,7 @@ Laporan-LSP-Sistem-Pemesanan-Restoran/
 - [ ] Daftar Isi, Daftar Gambar, dan Daftar Tabel otomatis.
 - [ ] BAB I–IX lengkap sesuai Bagian 6; BAB IV memuat 8 gambar diagram + tabel use case + tabel relasi + 6 tabel kamus data.
 - [ ] Nama tabel/kolom/tipe di kamus data **identik** dengan Bagian 4.1.
-- [ ] Hasil pengujian dan debugging **identik** dengan Bagian 7 (68 PASS/0 FAIL; E2E 61/61; rollback OK; 5 kasus debugging).
+- [ ] Hasil pengujian dan debugging **identik** dengan Bagian 7 (68 PASS/0 FAIL; E2E 74/74; rollback OK; 5 kasus debugging).
 - [ ] Caption gambar di bawah, caption tabel di atas, penomoran berurutan per bab.
 - [ ] Format sesuai Bagian 8 (A4, margin 4-3-3-3, Times New Roman 12, spasi 1,5, nomor halaman).
 - [ ] Tidak ada fitur yang tidak ada di aplikasi (tidak ada login, pembayaran, API, ekspor PDF/Excel).

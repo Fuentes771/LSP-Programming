@@ -36,7 +36,7 @@
 **Aturan wajib:**
 
 1. **8 slide utama** sesuai urutan di Bagian 3. Jangan menambah slide utama; materi tambahan masuk slide cadangan setelah slide penutup.
-2. **Jangan mengarang.** Angka pengujian (68 PASS/0 FAIL, 61/61 skenario, rollback OK) adalah data asli. Salin apa adanya.
+2. **Jangan mengarang.** Angka pengujian (68 PASS/0 FAIL, 74/74 skenario, rollback OK) adalah data asli. Salin apa adanya.
 3. **Identitas peserta memakai placeholder**: `[Nama Peserta]`, `[No. Peserta]`, `[Tanggal Uji]`, `[Nama Asesor]`, `[Logo LSP / Instansi]`.
 4. **Sedikit teks, banyak visual.** Maksimal **±6 poin per slide** dan **±8 kata per poin**. Penjelasan detail ditaruh di **speaker notes**.
 5. **Speaker notes wajib** di setiap slide, berbahasa Indonesia, dari naskah Bagian 6.
@@ -69,7 +69,8 @@
 | Fitur | Poin singkat untuk slide |
 |---|---|
 | Dashboard | Ringkasan data, reservasi hari ini, pesanan diproses, pendapatan hari ini |
-| Pelanggan, Meja, Menu | Tambah, ubah, hapus, cari; data berelasi dilindungi |
+| Pelanggan, Meja, Menu | Tambah, ubah, hapus, cari; telepon pelanggan unik; data berelasi dilindungi |
+| Pelanggan baru dari form | Di form reservasi/pesanan bisa pilih pelanggan terdaftar atau langsung tambah pelanggan baru (tersimpan otomatis, satu transaksi) |
 | Reservasi | Alur Menunggu → Dikonfirmasi → Selesai; jam buka 10:00–22:00; slot 2 jam; cek kapasitas & tumpang tindih |
 | Pesanan | Dari reservasi yang tamunya sudah datang; pratinjau total; harga terkunci saat dipesan; Diproses → Selesai/Dibatalkan |
 | Laporan | Filter rentang tanggal + pintasan periode; total tanpa pesanan dibatalkan; cetak lewat browser |
@@ -150,7 +151,7 @@ class Reservation extends BaseModel { /* cek kapasitas & bentrok */ }
 | Unit test `php tests/test_functions.php` | **68 PASS, 0 FAIL** (exit code 0) |
 | Rincian unit test | Subtotal/total **11**, tamu vs kapasitas **5**, harga & kuantitas **13**, reservasi bentrok slot 2 jam **10**, jam operasional & waktu **11**, alur status **11**, validasi lain **7** |
 | Bukti runner mendeteksi gagal | Fungsi sengaja dirusak pada salinan → **63 PASS, 5 FAIL**, exit code 1 |
-| Uji end-to-end (HTTP, MariaDB + server PHP) | **61 dari 61 skenario OK**, tanpa warning PHP |
+| Uji end-to-end (HTTP, MariaDB + server PHP) | **74 dari 74 skenario OK**, tanpa warning PHP |
 | Uji rollback transaksi | Insert item dipaksa gagal → pesanan **tidak tersimpan setengah** (ROLLBACK OK) |
 | Contoh angka uji | Pesanan dari reservasi: total **Rp 65.000**, tanggal otomatis = tanggal reservasi; laporan hari ini **Rp 120.000** (pesanan dibatalkan tidak dihitung); pratinjau form Rp 75.000 (2 × 30.000 + 3 × 5.000) |
 | Belum diuji | XAMPP/Laragon di Windows |
@@ -300,7 +301,7 @@ Setiap slide berisi: **judul**, **tata letak**, **isi**, **visual**, dan **speak
 - **Isi (langkah demo):**
   1. Dashboard: reservasi & pendapatan hari ini
   2. Tambah pelanggan (email salah → **ditolak**)
-  3. Reservasi 5 tamu: M01/M02 otomatis tidak bisa dipilih → M03 besok 19:00 → **berhasil** (Menunggu)
+  3. Reservasi dengan **Pelanggan baru** + 5 tamu: M01/M02 otomatis tidak bisa dipilih → M03 besok 19:00 → **berhasil** (Menunggu)
   4. M03 besok 20:00 → **ditolak** (tumpang tindih 2 jam)
   5. Konfirmasi reservasi hari ini → **Pesanan** → isi menu, pratinjau total → simpan
   6. Tandai pesanan Selesai; batalkan reservasi berpesanan → **ditolak**
@@ -316,7 +317,7 @@ Setiap slide berisi: **judul**, **tata letak**, **isi**, **visual**, dan **speak
 | Angka besar | Label |
 |---|---|
 | **68 / 68** | Unit test PASS |
-| **61 / 61** | Skenario end-to-end OK |
+| **74 / 74** | Skenario end-to-end OK |
 | **✓** | Rollback transaksi berhasil |
 
 - **Tabel rincian unit test:** Subtotal & total (11) · Tamu vs kapasitas (5) · Harga & kuantitas (13) · Reservasi bentrok slot 2 jam (10) · Jam operasional & waktu (11) · Alur status (11) · Validasi lain (7)
@@ -397,7 +398,7 @@ Total **±10 menit** (presentasi ±6 menit + demo ±4 menit). Masukkan naskah in
 | 4 | 1:00 | "Teknologi yang saya gunakan adalah PHP Native, MySQL atau MariaDB, PDO, dan Bootstrap 5 dari CDN, dijalankan dengan XAMPP atau Laragon. Database terdiri dari enam tabel yang saling berelasi dengan foreign key. Harga disimpan sebagai DECIMAL agar perhitungan uang tepat, dan pesanan beserta itemnya disimpan dalam satu transaksi sehingga tidak ada data yang tersimpan setengah." |
 | 5 | 1:15 | "Pemrograman terstruktur saya terapkan lewat fungsi-fungsi kecil di functions.php, misalnya calculateSubtotal untuk menghitung subtotal dan validateGuestCount untuk memeriksa jumlah tamu terhadap kapasitas. Fungsi ini tidak mengakses database sehingga bisa diuji langsung. Untuk OOP, saya membuat class abstrak BaseModel yang menyimpan koneksi PDO dan method umum, lalu diwarisi oleh lima class: Customer, RestaurantTable, MenuItem, Reservation, dan Order. Di sini terlihat abstraksi, pewarisan, enkapsulasi, dan dependency injection." |
 | 6 | 4:00 | "Sekarang saya demonstrasikan aplikasinya." Lalu ikuti 8 langkah demo di slide. Sorot meja yang otomatis tidak bisa dipilih saat tamu 5 orang, pesan tumpang tindih "Meja M03 sudah dipesan pada rentang waktu tersebut", tombol Konfirmasi → Pesanan yang mengisi form otomatis, pratinjau total, status pesanan yang menjadi final, penolakan batal reservasi berpesanan dan hapus pelanggan, serta tampilan cetak laporan tanpa navbar. |
-| 7 | 1:00 | "Untuk pengujian, saya membuat 68 unit test yang dijalankan dari terminal dan semuanya PASS, termasuk aturan jam operasional, slot dua jam, dan alur status. Runner akan keluar dengan status gagal jika ada test yang gagal; ini sudah saya buktikan dengan sengaja merusak fungsi pada salinan. Saya juga menguji 61 skenario aplikasi lewat HTTP dan semuanya berhasil, serta menguji rollback transaksi pesanan. Selama pengembangan ada lima kasus debugging yang saya dokumentasikan, misalnya test lama yang gagal setelah aturan bentrok diubah menjadi slot dua jam, dan halaman yang melebar di layar ponsel." |
+| 7 | 1:00 | "Untuk pengujian, saya membuat 68 unit test yang dijalankan dari terminal dan semuanya PASS, termasuk aturan jam operasional, slot dua jam, dan alur status. Runner akan keluar dengan status gagal jika ada test yang gagal; ini sudah saya buktikan dengan sengaja merusak fungsi pada salinan. Saya juga menguji 74 skenario aplikasi lewat HTTP dan semuanya berhasil, serta menguji rollback transaksi pesanan. Selama pengembangan ada lima kasus debugging yang saya dokumentasikan, misalnya test lama yang gagal setelah aturan bentrok diubah menjadi slot dua jam, dan halaman yang melebar di layar ponsel." |
 | 8 | 0:30 | "Kesimpulannya, semua fitur utama sesuai spesifikasi telah berjalan dan teruji, serta menunjukkan penerapan delapan unit kompetensi yang diujikan. Pengembangan selanjutnya bisa berupa login, proteksi CSRF, edit item pesanan, dan paginasi data. Terima kasih, saya siap menjawab pertanyaan." |
 
 **Persiapan demo (catatan untuk peserta, boleh dimasukkan ke speaker notes slide 6):**
@@ -453,7 +454,7 @@ Total **±10 menit** (presentasi ±6 menit + demo ±4 menit). Masukkan naskah in
 │ ▌Hasil Pengujian                                             │
 │                                                              │
 │   ┌─────────┐      ┌─────────┐      ┌─────────┐              │
-│   │ 68 / 68 │      │ 61 / 61 │      │    ✓    │              │
+│   │ 68 / 68 │      │ 74 / 74 │      │    ✓    │              │
 │   │Unit test│      │  E2E OK │      │Rollback │              │
 │   └─────────┘      └─────────┘      └─────────┘              │
 │                                                              │
@@ -490,7 +491,7 @@ Total **±10 menit** (presentasi ±6 menit + demo ±4 menit). Masukkan naskah in
 - [ ] File `.pptx` 16:9, **8 slide utama** sesuai urutan Bagian 3 (+ lampiran opsional setelah slide 8).
 - [ ] Placeholder identitas tetap placeholder (`[Nama Peserta]`, dst.); tidak ada nama karangan.
 - [ ] Setiap slide punya **speaker notes** dari Bagian 6.
-- [ ] Angka pengujian **identik**: 68 PASS/0 FAIL; rincian 11-5-13-10-11-11-7; 61/61 E2E; rollback OK.
+- [ ] Angka pengujian **identik**: 68 PASS/0 FAIL; rincian 11-5-13-10-11-11-7; 74/74 E2E; rollback OK.
 - [ ] Tidak ada fitur yang tidak ada di aplikasi (tidak ada login, pembayaran online, API, ekspor PDF/Excel).
 - [ ] Teks minimal 16 pt, maksimal ±6 poin per slide, kode terbaca jelas.
 - [ ] Palet warna & font konsisten di semua slide; footer & nomor slide ada di slide konten.

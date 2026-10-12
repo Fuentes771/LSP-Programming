@@ -33,7 +33,7 @@ Aplikasi Web PHP Native & MySQL
 ## Slide 3 — Fitur Aplikasi
 
 - **Dashboard**: ringkasan data, reservasi hari ini, pesanan diproses, pendapatan hari ini
-- **Pelanggan, Meja, Menu**: tambah, ubah, hapus (data berelasi dilindungi)
+- **Pelanggan, Meja, Menu**: tambah, ubah, hapus, cari (data berelasi dilindungi); pelanggan baru bisa langsung ditambahkan dari form reservasi/pesanan
 - **Reservasi**: alur Menunggu → Dikonfirmasi → Selesai; jam buka 10:00–22:00, slot 2 jam, cek kapasitas & tumpang tindih
 - **Pesanan**: dibuat dari reservasi yang tamunya sudah datang, pratinjau total, harga terkunci saat pesanan dibuat
 - **Laporan**: filter rentang tanggal dan cetak lewat browser
@@ -93,7 +93,7 @@ Skenario demo (± 5 menit), dengan data contoh hasil impor ulang `database.sql`:
 
 1. Dashboard: tunjukkan reservasi hari ini, pesanan diproses, dan pendapatan hari ini.
 2. Tambah pelanggan baru, lalu coba simpan dengan email yang salah → **ditolak** (validasi server).
-3. Buat Reservasi: isi 5 tamu → meja M01 dan M02 otomatis tidak bisa dipilih; pilih M03 besok pukul 19:00 → **berhasil** dengan status Menunggu.
+3. Buat Reservasi dengan **Pelanggan baru** (isi nama & telepon), isi 5 tamu → meja M01 dan M02 otomatis tidak bisa dipilih; pilih M03 besok pukul 19:00 → **berhasil** dengan status Menunggu.
 4. Buat reservasi lain di M03 besok pukul 20:00 → **ditolak** karena tumpang tindih dengan slot 19:00–21:00.
 5. Di daftar Hari Ini, klik **Konfirmasi** pada reservasi Andi Wijaya, lalu klik **Pesanan**: pelanggan, reservasi, dan tanggal terisi otomatis. Isi beberapa menu dan tunjukkan pratinjau total → Simpan.
 6. Di detail pesanan klik **Tandai Selesai** → status final. Coba **Batalkan** reservasi yang punya pesanan → **ditolak**.
@@ -109,7 +109,7 @@ Skenario demo (± 5 menit), dengan data contoh hasil impor ulang `database.sql`:
 - Mencakup: subtotal/total pesanan, jumlah tamu vs kapasitas, harga/kuantitas, reservasi bentrok (slot 2 jam), jam operasional & waktu lewat, serta alur status reservasi dan pesanan
 - Jika ada pengujian gagal, exit code menjadi 1 (sudah diverifikasi)
 
-**Uji end-to-end** (MariaDB + server PHP): **61 dari 61 skenario OK**
+**Uji end-to-end** (MariaDB + server PHP): **74 dari 74 skenario OK**
 **Uji rollback transaksi**: pesanan gagal tidak tersimpan setengah
 
 **Debugging (5 kasus)**: metode redirect pada skrip uji, README berencoding UTF-16, format waktu `HH:MM` vs `HH:MM:SS`, test lama gagal setelah aturan slot 2 jam, dan halaman melebar di layar ponsel
