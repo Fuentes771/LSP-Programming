@@ -88,17 +88,8 @@ class Order extends BaseModel
         $orderDate = $data['order_date'] ?? '';
         $today = $this->now->format('Y-m-d');
 
-        if (!isPositiveInteger($customerId)) {
-            $errors[] = 'Pelanggan wajib dipilih.';
-        } else {
-            $stmt = $this->db->prepare('SELECT id FROM customers WHERE id = ?');
-            $stmt->execute([(int) $customerId]);
-            if ($stmt->fetch() === false) {
-                $errors[] = 'Pelanggan yang dipilih tidak ditemukan.';
-            }
-        }
-
         if ($reservationId !== '') {
+            // Pesanan dari reservasi: pelanggan dan tanggal otomatis mengikuti reservasi
             $reservation = false;
             if (isPositiveInteger($reservationId)) {
                 $stmt = $this->db->prepare('SELECT customer_id, status, reservation_date FROM reservations WHERE id = ?');
@@ -107,17 +98,25 @@ class Order extends BaseModel
             }
             if ($reservation === false) {
                 $errors[] = 'Reservasi yang dipilih tidak ditemukan.';
-            } elseif ((int) $reservation['customer_id'] !== (int) $customerId) {
-                $errors[] = 'Reservasi yang dipilih bukan milik pelanggan tersebut.';
-            } elseif (!in_array($reservation['status'], ORDERABLE_RESERVATION_STATUSES, true)) {
-                $errors[] = 'Pesanan hanya dapat dibuat untuk reservasi yang sudah Dikonfirmasi atau Selesai (status saat ini: '
-                    . $reservation['status'] . ').';
-            } elseif ($reservation['reservation_date'] > $today) {
-                $errors[] = 'Pesanan untuk reservasi baru dapat dibuat pada tanggal reservasinya.';
             } else {
-                $orderDate = $reservation['reservation_date'];
+                $reservationErrors = validateReservationForOrder($reservation, $today);
+                $errors = array_merge($errors, $reservationErrors);
+                if (!$reservationErrors) {
+                    $customerId = (string) $reservation['customer_id'];
+                    $orderDate = $reservation['reservation_date'];
+                }
             }
         } else {
+            // Pesanan tanpa reservasi (walk-in): pelanggan wajib dipilih, tanggal tidak boleh melebihi hari ini
+            if (!isPositiveInteger($customerId)) {
+                $errors[] = 'Pelanggan wajib dipilih.';
+            } else {
+                $stmt = $this->db->prepare('SELECT id FROM customers WHERE id = ?');
+                $stmt->execute([(int) $customerId]);
+                if ($stmt->fetch() === false) {
+                    $errors[] = 'Pelanggan yang dipilih tidak ditemukan.';
+                }
+            }
             $errors = array_merge($errors, validateOrderDate($orderDate, $today));
         }
 
@@ -179,19 +178,47 @@ class Order extends BaseModel
         return ['errors' => [], 'id' => $orderId];
     }
 
-    /** Mengubah status sesuai alur: Diproses → Selesai atau Dibatalkan. */
+    /**
+     * Mengubah status sesuai alur: Diproses → Selesai atau Dibatalkan.
+     * Jika pesanan yang terkait reservasi diselesaikan dan tidak ada pesanan lain yang masih Diproses,
+     * reservasinya otomatis ikut diselesaikan (dalam satu transaksi).
+     *
+     * @return array{errors: array, reservation_completed: bool}
+     */
     public function updateStatus(int $id, string $status): array
     {
         $order = $this->find($id);
         if ($order === null) {
-            return ['Data pesanan tidak ditemukan.'];
+            return ['errors' => ['Data pesanan tidak ditemukan.'], 'reservation_completed' => false];
         }
         if (!canChangeStatus($order['status'], $status, ORDER_TRANSITIONS)) {
-            return ['Status pesanan tidak dapat diubah dari ' . $order['status'] . ' menjadi ' . $status . '.'];
+            return ['errors' => ['Status pesanan tidak dapat diubah dari ' . $order['status'] . ' menjadi ' . $status . '.'], 'reservation_completed' => false];
         }
 
-        $stmt = $this->db->prepare('UPDATE restaurant_orders SET status = ? WHERE id = ?');
-        $stmt->execute([$status, $id]);
-        return [];
+        $reservationCompleted = false;
+        $this->db->beginTransaction();
+        try {
+            $stmt = $this->db->prepare('UPDATE restaurant_orders SET status = ? WHERE id = ?');
+            $stmt->execute([$status, $id]);
+
+            if ($status === 'Selesai' && $order['reservation_id'] !== null) {
+                $reservationId = (int) $order['reservation_id'];
+                $statusStmt = $this->db->prepare('SELECT status FROM reservations WHERE id = ?');
+                $statusStmt->execute([$reservationId]);
+                $openStmt = $this->db->prepare('SELECT COUNT(*) FROM restaurant_orders WHERE reservation_id = ? AND status = ?');
+                $openStmt->execute([$reservationId, 'Diproses']);
+
+                if (shouldCompleteReservation((string) $statusStmt->fetchColumn(), (int) $openStmt->fetchColumn())) {
+                    $this->db->prepare('UPDATE reservations SET status = ? WHERE id = ?')->execute(['Selesai', $reservationId]);
+                    $reservationCompleted = true;
+                }
+            }
+            $this->db->commit();
+        } catch (PDOException $e) {
+            $this->db->rollBack();
+            throw $e;
+        }
+
+        return ['errors' => [], 'reservation_completed' => $reservationCompleted];
     }
 }

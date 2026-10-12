@@ -12,13 +12,18 @@ $form = ['customer_id' => '', 'reservation_id' => '', 'order_date' => $today];
 $quantities = [];
 $customerMode = 'existing';
 $newCustomer = ['name' => '', 'phone' => '', 'email' => ''];
+$orderType = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (input('action') === 'status') {
         $id = (int) input('id');
         $newStatus = input('status');
+        $result = $orderModel->updateStatus($id, $newStatus);
         $message = $newStatus === 'Selesai' ? 'Pesanan ditandai selesai.' : 'Pesanan dibatalkan.';
-        flashResult($orderModel->updateStatus($id, $newStatus), $message);
+        if ($result['reservation_completed']) {
+            $message .= ' Reservasi terkait otomatis ditandai selesai.';
+        }
+        flashResult($result['errors'], $message);
         redirect(pageUrl('orders', ['action' => 'view', 'id' => $id]));
     }
 
@@ -26,24 +31,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $form[$field] = input($field);
     }
     $quantities = is_array($_POST['quantity'] ?? null) ? $_POST['quantity'] : [];
-    $customerMode = input('customer_mode') === 'new' ? 'new' : 'existing';
-    $newCustomer = ['name' => input('new_customer_name'), 'phone' => input('new_customer_phone'), 'email' => input('new_customer_email')];
+    $orderType = input('order_type') === 'reservation' ? 'reservation' : 'walkin';
     $orderId = null;
-    $result = $customerModel->runWithCustomer($customerMode, $form['customer_id'], $newCustomer,
-        function (string $customerId) use ($form, $quantities, $orderModel, $menuModel, &$orderId): array {
-            $created = $orderModel->create(['customer_id' => $customerId] + $form, $quantities, $menuModel);
+
+    if ($orderType === 'reservation') {
+        // Pesanan dari reservasi: pelanggan, meja, dan tanggal diambil dari reservasi
+        if ($form['reservation_id'] === '') {
+            $errors = ['Pilih reservasi yang sudah Dikonfirmasi, atau pilih jenis pesanan "Tanpa reservasi".'];
+        } else {
+            $created = $orderModel->create(['customer_id' => '', 'reservation_id' => $form['reservation_id'], 'order_date' => ''], $quantities, $menuModel);
+            $errors = $created['errors'];
             $orderId = $created['id'];
-            return $created['errors'];
-        });
-    if (!$result['errors']) {
+        }
+    } else {
+        // Pesanan tanpa reservasi (walk-in): pelanggan terdaftar atau pelanggan baru
+        $form['reservation_id'] = '';
+        $customerMode = input('customer_mode') === 'new' ? 'new' : 'existing';
+        $newCustomer = ['name' => input('new_customer_name'), 'phone' => input('new_customer_phone'), 'email' => input('new_customer_email')];
+        $result = $customerModel->runWithCustomer($customerMode, $form['customer_id'], $newCustomer,
+            function (string $customerId) use ($form, $quantities, $orderModel, $menuModel, &$orderId): array {
+                $created = $orderModel->create(['customer_id' => $customerId] + $form, $quantities, $menuModel);
+                $orderId = $created['id'];
+                return $created['errors'];
+            });
+        $errors = $result['errors'];
+    }
+
+    if (!$errors) {
         $successMessage = 'Pesanan berhasil disimpan.';
-        if ($customerMode === 'new') {
+        if ($orderType === 'walkin' && $customerMode === 'new') {
             $successMessage .= ' Pelanggan baru "' . $newCustomer['name'] . '" ditambahkan ke data Pelanggan.';
         }
         setFlash('success', $successMessage);
         redirect(pageUrl('orders', ['action' => 'view', 'id' => $orderId]));
     }
-    $errors = $result['errors'];
     $view = 'create';
 }
 
@@ -59,17 +80,14 @@ if ($view === 'view') {
     $reservations = (new Reservation($db))->forOrder();
     $menus = $menuModel->available();
 
-    // Dibuka dari tombol "Pesanan" di halaman reservasi: isi pelanggan & tanggal otomatis
+    // Dibuka dari tombol "Pesanan" di halaman reservasi: reservasi langsung terpilih
     if ($_SERVER['REQUEST_METHOD'] !== 'POST' && query('reservation_id') !== '') {
-        foreach ($reservations as $reservation) {
-            if ((string) $reservation['id'] === query('reservation_id')) {
-                $form = [
-                    'customer_id'    => (string) $reservation['customer_id'],
-                    'reservation_id' => (string) $reservation['id'],
-                    'order_date'     => $reservation['reservation_date'],
-                ];
-            }
-        }
+        $form['reservation_id'] = query('reservation_id');
+        $orderType = 'reservation';
+    }
+    // Jenis pesanan default: dari reservasi jika ada reservasi yang siap dipesan
+    if ($orderType === '') {
+        $orderType = $reservations ? 'reservation' : 'walkin';
     }
     $pageTitle = 'Buat Pesanan';
 } else {
@@ -136,41 +154,83 @@ require __DIR__ . '/../includes/header.php';
     </div>
 
 <?php elseif ($view === 'create'): ?>
-    <?= pageHeader('Buat Pesanan', 'bi-plus-square', 'Isi jumlah pada menu yang dipesan. Harga mengikuti harga menu saat pesanan disimpan.') ?>
+    <?= pageHeader('Buat Pesanan', 'bi-plus-square', 'Pilih reservasi yang sudah dikonfirmasi (pelanggan & meja otomatis) atau pesanan tanpa reservasi, lalu isi menu.') ?>
     <?= showErrors($errors) ?>
 
     <form method="post" id="order-form">
         <input type="hidden" name="action" value="create">
         <div class="row g-4">
             <div class="col-lg-8">
+                <?php
+                $selectedReservation = null;
+                foreach ($reservations as $reservation) {
+                    if ((string) $reservation['id'] === $form['reservation_id']) {
+                        $selectedReservation = $reservation;
+                    }
+                }
+                ?>
                 <div class="card mb-4">
                     <div class="card-header"><i class="bi bi-person-lines-fill me-1"></i>Data Pesanan</div>
                     <div class="card-body">
-                        <div class="row g-3">
-                            <div class="col-12">
-                                <?php require __DIR__ . '/../includes/customer_picker.php'; ?>
-                            </div>
-                            <div class="col-md-8">
-                                <label for="reservation_id" class="form-label">Reservasi <span class="text-muted">(opsional)</span></label>
-                                <select class="form-select" id="reservation_id" name="reservation_id">
-                                    <option value="">-- Tanpa Reservasi --</option>
+                        <div class="btn-group w-100 mb-3" role="group" aria-label="Jenis pesanan">
+                            <input type="radio" class="btn-check" name="order_type" id="order_type_reservation" value="reservation" <?= $orderType === 'reservation' ? 'checked' : '' ?>>
+                            <label class="btn btn-outline-primary" for="order_type_reservation"><i class="bi bi-calendar-check me-1"></i>Dari reservasi</label>
+                            <input type="radio" class="btn-check" name="order_type" id="order_type_walkin" value="walkin" <?= $orderType === 'walkin' ? 'checked' : '' ?>>
+                            <label class="btn btn-outline-primary" for="order_type_walkin"><i class="bi bi-person-walking me-1"></i>Tanpa reservasi (walk-in)</label>
+                        </div>
+
+                        <fieldset data-order-section="reservation">
+                            <?php if (empty($reservations)): ?>
+                                <div class="alert alert-warning small mb-0">
+                                    <i class="bi bi-info-circle me-1"></i>Belum ada reservasi berstatus <strong>Dikonfirmasi</strong> untuk hari ini.
+                                    Konfirmasi reservasi tamu yang sudah datang di halaman <a href="<?= e(pageUrl('reservations', ['scope' => 'today'])) ?>">Reservasi</a>, atau pilih "Tanpa reservasi".
+                                </div>
+                            <?php else: ?>
+                                <label for="reservation_id" class="form-label">Reservasi</label>
+                                <select class="form-select" id="reservation_id" name="reservation_id" required>
+                                    <option value="">-- Pilih Reservasi yang Sudah Dikonfirmasi --</option>
                                     <?php foreach ($reservations as $reservation): ?>
                                         <option value="<?= (int) $reservation['id'] ?>"
-                                                data-customer="<?= (int) $reservation['customer_id'] ?>"
-                                                data-date="<?= e($reservation['reservation_date']) ?>"
+                                                data-customer="<?= e($reservation['customer_name']) ?>"
+                                                data-phone="<?= e($reservation['customer_phone']) ?>"
+                                                data-table="<?= e($reservation['table_number']) ?>"
+                                                data-schedule="<?= e(formatDate($reservation['reservation_date']) . ' ' . formatTime($reservation['reservation_time'])) ?>"
+                                                data-guests="<?= (int) $reservation['guest_count'] ?>"
                                             <?= $form['reservation_id'] === (string) $reservation['id'] ? 'selected' : '' ?>>
-                                            Meja <?= e($reservation['table_number']) ?> · <?= e(formatDate($reservation['reservation_date'])) ?> <?= e(formatTime($reservation['reservation_time'])) ?> (<?= e($reservation['customer_name']) ?>)
+                                            <?= e($reservation['customer_name']) ?> · Meja <?= e($reservation['table_number']) ?> · <?= e(formatDate($reservation['reservation_date'])) ?> <?= e(formatTime($reservation['reservation_time'])) ?>
                                         </option>
                                     <?php endforeach; ?>
                                 </select>
-                                <div class="form-text" id="reservation-hint">Hanya reservasi pelanggan terpilih yang sudah Dikonfirmasi/Selesai.</div>
+                                <div class="form-text">Hanya reservasi berstatus Dikonfirmasi. Pelanggan, meja, dan tanggal pesanan otomatis mengikuti reservasi.</div>
+
+                                <div id="reservation-info" class="row g-2 mt-2 small" <?= $selectedReservation ? '' : 'hidden' ?>>
+                                    <?php foreach ([
+                                        ['customer', 'bi-person', 'Pelanggan', $selectedReservation ? $selectedReservation['customer_name'] . ' (' . $selectedReservation['customer_phone'] . ')' : ''],
+                                        ['table', 'bi-grid-3x3-gap', 'Meja', $selectedReservation['table_number'] ?? ''],
+                                        ['schedule', 'bi-clock', 'Jadwal', $selectedReservation ? formatDate($selectedReservation['reservation_date']) . ' ' . formatTime($selectedReservation['reservation_time']) : ''],
+                                        ['guests', 'bi-people', 'Tamu', $selectedReservation ? $selectedReservation['guest_count'] . ' orang' : ''],
+                                    ] as [$field, $icon, $label, $value]): ?>
+                                        <div class="col-6 col-md-3">
+                                            <div class="border rounded-3 p-2 bg-body-tertiary h-100">
+                                                <div class="text-muted"><i class="bi <?= e($icon) ?> me-1"></i><?= e($label) ?></div>
+                                                <div class="fw-semibold" data-info="<?= e($field) ?>"><?= e($value) ?></div>
+                                            </div>
+                                        </div>
+                                    <?php endforeach; ?>
+                                </div>
+                            <?php endif; ?>
+                        </fieldset>
+
+                        <fieldset data-order-section="walkin">
+                            <?php require __DIR__ . '/../includes/customer_picker.php'; ?>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <label for="order_date" class="form-label">Tanggal Pesanan</label>
+                                    <input type="date" class="form-control" id="order_date" name="order_date" required max="<?= e($today) ?>" value="<?= e($form['order_date']) ?>">
+                                    <div class="form-text">Tidak boleh melebihi hari ini.</div>
+                                </div>
                             </div>
-                            <div class="col-md-4">
-                                <label for="order_date" class="form-label">Tanggal</label>
-                                <input type="date" class="form-control" id="order_date" name="order_date" required max="<?= e($today) ?>" value="<?= e($form['order_date']) ?>">
-                                <div class="form-text" id="order-date-hint">Tidak boleh melebihi hari ini.</div>
-                            </div>
-                        </div>
+                        </fieldset>
                     </div>
                 </div>
 
@@ -267,7 +327,7 @@ require __DIR__ . '/../includes/header.php';
                 <div class="card no-print">
                     <div class="card-header"><i class="bi bi-arrow-repeat me-1"></i>Ubah Status</div>
                     <div class="card-body d-grid gap-2">
-                        <?= actionButton('status', (int) $order['id'], 'Tandai Selesai', 'btn-success w-100', 'Tandai pesanan ini selesai?', ['status' => 'Selesai'], 'bi-check2-circle') ?>
+                        <?= actionButton('status', (int) $order['id'], 'Tandai Selesai', 'btn-success w-100', ($order['reservation_id'] ? 'Tandai pesanan ini selesai? Reservasi terkait ikut diselesaikan jika tidak ada pesanan lain yang masih diproses.' : 'Tandai pesanan ini selesai?'), ['status' => 'Selesai'], 'bi-check2-circle') ?>
                         <?= actionButton('status', (int) $order['id'], 'Batalkan Pesanan', 'btn-outline-danger w-100', 'Batalkan pesanan ini? Tindakan tidak dapat diubah kembali.', ['status' => 'Dibatalkan'], 'bi-x-circle') ?>
                     </div>
                 </div>
