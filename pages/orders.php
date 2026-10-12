@@ -3,16 +3,19 @@ defined('APP_RUNNING') or exit('Akses langsung tidak diizinkan.');
 
 $orderModel = new Order($db);
 $menuModel = new MenuItem($db);
-$view = $_GET['action'] ?? 'list';
+$today = date('Y-m-d');
+$view = query('action', 'list');
+$statusFilter = in_array(query('status'), ORDER_STATUSES, true) ? query('status') : '';
 $errors = [];
-$form = ['customer_id' => '', 'reservation_id' => '', 'order_date' => date('Y-m-d')];
+$form = ['customer_id' => '', 'reservation_id' => '', 'order_date' => $today];
 $quantities = [];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (input('action') === 'status') {
         $id = (int) input('id');
-        $errors = $orderModel->updateStatus($id, input('status'));
-        $errors ? setFlash('danger', implode(' ', $errors)) : setFlash('success', 'Status pesanan berhasil diubah.');
+        $newStatus = input('status');
+        $message = $newStatus === 'Selesai' ? 'Pesanan ditandai selesai.' : 'Pesanan dibatalkan.';
+        flashResult($orderModel->updateStatus($id, $newStatus), $message);
         redirect(pageUrl('orders', ['action' => 'view', 'id' => $id]));
     }
 
@@ -30,20 +33,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 if ($view === 'view') {
-    $order = $orderModel->findWithItems((int) ($_GET['id'] ?? 0));
+    $order = $orderModel->findWithItems((int) query('id'));
     if ($order === null) {
         setFlash('danger', 'Data pesanan tidak ditemukan.');
         redirect(pageUrl('orders'));
     }
-    $pageTitle = 'Detail Pesanan';
+    $pageTitle = 'Detail Pesanan #' . $order['id'];
 } elseif ($view === 'create') {
     $customers = (new Customer($db))->all();
-    $reservations = (new Reservation($db))->selectable();
+    $reservations = (new Reservation($db))->forOrder();
     $menus = $menuModel->available();
+
+    // Dibuka dari tombol "Pesanan" di halaman reservasi: isi pelanggan & tanggal otomatis
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST' && query('reservation_id') !== '') {
+        foreach ($reservations as $reservation) {
+            if ((string) $reservation['id'] === query('reservation_id')) {
+                $form = [
+                    'customer_id'    => (string) $reservation['customer_id'],
+                    'reservation_id' => (string) $reservation['id'],
+                    'order_date'     => $reservation['reservation_date'],
+                ];
+            }
+        }
+    }
     $pageTitle = 'Buat Pesanan';
 } else {
     $view = 'list';
-    $orders = $orderModel->all();
+    $orders = $orderModel->all($statusFilter);
     $pageTitle = 'Pesanan';
 }
 
@@ -51,172 +67,215 @@ require __DIR__ . '/../includes/header.php';
 ?>
 
 <?php if ($view === 'list'): ?>
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1 class="h3 mb-0">Daftar Pesanan</h1>
-        <a href="<?= e(pageUrl('orders', ['action' => 'create'])) ?>" class="btn btn-primary">+ Buat Pesanan</a>
-    </div>
-    <div class="card shadow-sm">
-        <div class="table-responsive">
-            <table class="table table-hover mb-0">
-                <thead class="table-light">
-                <tr>
-                    <th>No. Pesanan</th>
-                    <th>Tanggal</th>
-                    <th>Pelanggan</th>
-                    <th class="text-center">Jumlah Item</th>
-                    <th class="text-end">Total</th>
-                    <th>Status</th>
-                    <th class="text-end">Aksi</th>
-                </tr>
-                </thead>
-                <tbody>
-                <?php if (empty($orders)): ?>
-                    <tr><td colspan="7" class="text-center text-muted py-3">Belum ada pesanan.</td></tr>
-                <?php endif; ?>
-                <?php foreach ($orders as $row): ?>
+    <?= pageHeader('Daftar Pesanan', 'bi-receipt', 'Alur status: Diproses → Selesai, atau Dibatalkan.',
+        '<a href="' . e(pageUrl('orders', ['action' => 'create'])) . '" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i>Buat Pesanan</a>') ?>
+
+    <ul class="nav nav-pills mb-3">
+        <?php foreach (['' => 'Semua'] + array_combine(ORDER_STATUSES, ORDER_STATUSES) as $key => $label): ?>
+            <li class="nav-item">
+                <a class="nav-link<?= $statusFilter === $key ? ' active' : '' ?>" href="<?= e(pageUrl('orders', array_filter(['status' => $key]))) ?>"><?= e($label) ?></a>
+            </li>
+        <?php endforeach; ?>
+    </ul>
+
+    <div class="card">
+        <?php if (empty($orders)): ?>
+            <?= emptyState('Belum ada pesanan pada filter ini.',
+                '<a href="' . e(pageUrl('orders', ['action' => 'create'])) . '" class="btn btn-sm btn-primary">Buat Pesanan</a>') ?>
+        <?php else: ?>
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
                     <tr>
-                        <td>#<?= (int) $row['id'] ?></td>
-                        <td><?= e(formatDate($row['order_date'])) ?></td>
-                        <td><?= e($row['customer_name']) ?></td>
-                        <td class="text-center"><?= (int) $row['item_count'] ?></td>
-                        <td class="text-end"><?= e(formatRupiah($row['total_amount'])) ?></td>
-                        <td><span class="badge text-bg-<?= e(statusBadgeClass($row['status'])) ?>"><?= e($row['status']) ?></span></td>
-                        <td class="text-end">
-                            <a href="<?= e(pageUrl('orders', ['action' => 'view', 'id' => $row['id']])) ?>" class="btn btn-sm btn-outline-primary">Detail</a>
-                        </td>
+                        <th>No.</th>
+                        <th>Tanggal</th>
+                        <th>Pelanggan</th>
+                        <th>Reservasi</th>
+                        <th class="text-center">Item</th>
+                        <th class="text-end">Total</th>
+                        <th>Status</th>
+                        <th class="text-end">Aksi</th>
                     </tr>
-                <?php endforeach; ?>
-                </tbody>
-            </table>
-        </div>
+                    </thead>
+                    <tbody>
+                    <?php foreach ($orders as $row): ?>
+                        <tr>
+                            <td class="fw-semibold">#<?= (int) $row['id'] ?></td>
+                            <td class="text-nowrap"><?= e(formatDate($row['order_date'])) ?></td>
+                            <td><?= e($row['customer_name']) ?></td>
+                            <td class="small text-muted text-nowrap">
+                                <?= $row['reservation_id'] ? 'Meja ' . e($row['table_number']) . ' · ' . e(formatTime($row['reservation_time'])) : 'Tanpa reservasi' ?>
+                            </td>
+                            <td class="text-center"><?= (int) $row['item_count'] ?></td>
+                            <td class="text-end fw-semibold text-nowrap"><?= e(formatRupiah($row['total_amount'])) ?></td>
+                            <td><?= statusBadge($row['status']) ?></td>
+                            <td class="text-end">
+                                <a href="<?= e(pageUrl('orders', ['action' => 'view', 'id' => $row['id']])) ?>" class="btn btn-sm btn-outline-primary"><i class="bi bi-eye me-1"></i>Detail</a>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        <?php endif; ?>
     </div>
 
 <?php elseif ($view === 'create'): ?>
-    <h1 class="h3 mb-4">Buat Pesanan</h1>
+    <?= pageHeader('Buat Pesanan', 'bi-plus-square', 'Isi jumlah pada menu yang dipesan. Harga mengikuti harga menu saat pesanan disimpan.') ?>
     <?= showErrors($errors) ?>
-    <form method="post">
+
+    <form method="post" id="order-form">
         <input type="hidden" name="action" value="create">
         <div class="row g-4">
-            <div class="col-lg-4">
-                <div class="card shadow-sm">
-                    <div class="card-header bg-white"><strong>Data Pesanan</strong></div>
+            <div class="col-lg-8">
+                <div class="card mb-4">
+                    <div class="card-header"><i class="bi bi-person-lines-fill me-1"></i>Data Pesanan</div>
                     <div class="card-body">
-                        <div class="mb-3">
-                            <label for="customer_id" class="form-label">Pelanggan</label>
-                            <select class="form-select" id="customer_id" name="customer_id" required>
-                                <option value="">-- Pilih Pelanggan --</option>
-                                <?php foreach ($customers as $customer): ?>
-                                    <option value="<?= (int) $customer['id'] ?>" <?= $form['customer_id'] === (string) $customer['id'] ? 'selected' : '' ?>>
-                                        <?= e($customer['name']) ?>
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                        <div class="mb-3">
-                            <label for="reservation_id" class="form-label">Reservasi <span class="text-muted">(opsional)</span></label>
-                            <select class="form-select" id="reservation_id" name="reservation_id">
-                                <option value="">-- Tanpa Reservasi --</option>
-                                <?php foreach ($reservations as $reservation): ?>
-                                    <option value="<?= (int) $reservation['id'] ?>" <?= $form['reservation_id'] === (string) $reservation['id'] ? 'selected' : '' ?>>
-                                        <?= e($reservation['customer_name']) ?> - Meja <?= e($reservation['table_number']) ?>,
-                                        <?= e(formatDate($reservation['reservation_date'])) ?> <?= e(formatTime($reservation['reservation_time'])) ?>
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
-                            <div class="form-text">Reservasi harus milik pelanggan yang dipilih.</div>
-                        </div>
-                        <div class="mb-3">
-                            <label for="order_date" class="form-label">Tanggal Pesanan</label>
-                            <input type="date" class="form-control" id="order_date" name="order_date" required value="<?= e($form['order_date']) ?>">
+                        <div class="row g-3">
+                            <div class="col-md-4">
+                                <label for="customer_id" class="form-label">Pelanggan</label>
+                                <select class="form-select" id="customer_id" name="customer_id" required>
+                                    <option value="">-- Pilih Pelanggan --</option>
+                                    <?php foreach ($customers as $customer): ?>
+                                        <option value="<?= (int) $customer['id'] ?>" <?= $form['customer_id'] === (string) $customer['id'] ? 'selected' : '' ?>>
+                                            <?= e($customer['name']) ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div class="col-md-5">
+                                <label for="reservation_id" class="form-label">Reservasi <span class="text-muted">(opsional)</span></label>
+                                <select class="form-select" id="reservation_id" name="reservation_id">
+                                    <option value="">-- Tanpa Reservasi --</option>
+                                    <?php foreach ($reservations as $reservation): ?>
+                                        <option value="<?= (int) $reservation['id'] ?>"
+                                                data-customer="<?= (int) $reservation['customer_id'] ?>"
+                                                data-date="<?= e($reservation['reservation_date']) ?>"
+                                            <?= $form['reservation_id'] === (string) $reservation['id'] ? 'selected' : '' ?>>
+                                            Meja <?= e($reservation['table_number']) ?> · <?= e(formatDate($reservation['reservation_date'])) ?> <?= e(formatTime($reservation['reservation_time'])) ?> (<?= e($reservation['customer_name']) ?>)
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <div class="form-text">Hanya reservasi pelanggan terpilih yang sudah Dikonfirmasi/Selesai.</div>
+                            </div>
+                            <div class="col-md-3">
+                                <label for="order_date" class="form-label">Tanggal</label>
+                                <input type="date" class="form-control" id="order_date" name="order_date" required max="<?= e($today) ?>" value="<?= e($form['order_date']) ?>">
+                                <div class="form-text" id="order-date-hint">Tidak boleh melebihi hari ini.</div>
+                            </div>
                         </div>
                     </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header"><i class="bi bi-journal-text me-1"></i>Pilih Menu</div>
+                    <?php if (empty($menus)): ?>
+                        <?= emptyState('Tidak ada menu yang tersedia.', '<a href="' . e(pageUrl('menu')) . '" class="btn btn-sm btn-primary">Kelola Menu</a>') ?>
+                    <?php else: ?>
+                        <div class="table-responsive">
+                            <table class="table">
+                                <thead>
+                                <tr>
+                                    <th>Menu</th>
+                                    <th class="text-end">Harga</th>
+                                    <th class="text-center">Jumlah</th>
+                                    <th class="text-end">Subtotal</th>
+                                </tr>
+                                </thead>
+                                <tbody>
+                                <?php foreach ($menus as $menu): ?>
+                                    <?php $qty = $quantities[$menu['id']] ?? ''; ?>
+                                    <tr class="menu-row" data-price="<?= e($menu['price']) ?>">
+                                        <td><label for="qty-<?= (int) $menu['id'] ?>" class="fw-semibold"><?= e($menu['name']) ?></label></td>
+                                        <td class="text-end text-nowrap"><?= e(formatRupiah($menu['price'])) ?></td>
+                                        <td>
+                                            <div class="input-group input-group-sm qty-group mx-auto">
+                                                <button type="button" class="btn btn-outline-secondary qty-minus" aria-label="Kurangi"><i class="bi bi-dash"></i></button>
+                                                <input type="number" class="form-control qty-input" min="0" max="<?= MAX_ORDER_QUANTITY ?>" step="1"
+                                                       id="qty-<?= (int) $menu['id'] ?>" name="quantity[<?= (int) $menu['id'] ?>]"
+                                                       value="<?= e(is_scalar($qty) ? $qty : '') ?>" placeholder="0">
+                                                <button type="button" class="btn btn-outline-secondary qty-plus" aria-label="Tambah"><i class="bi bi-plus"></i></button>
+                                            </div>
+                                        </td>
+                                        <td class="text-end text-nowrap row-subtotal">-</td>
+                                    </tr>
+                                <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    <?php endif; ?>
                 </div>
             </div>
-            <div class="col-lg-8">
-                <div class="card shadow-sm">
-                    <div class="card-header bg-white"><strong>Pilih Menu</strong> <span class="text-muted small">(isi jumlah, kosongkan jika tidak dipesan)</span></div>
-                    <div class="table-responsive">
-                        <table class="table mb-0">
-                            <thead class="table-light">
-                            <tr>
-                                <th>Menu</th>
-                                <th class="text-end">Harga</th>
-                                <th style="width: 130px;">Jumlah</th>
-                            </tr>
-                            </thead>
-                            <tbody>
-                            <?php if (empty($menus)): ?>
-                                <tr><td colspan="3" class="text-center text-muted py-3">Tidak ada menu yang tersedia.</td></tr>
-                            <?php endif; ?>
-                            <?php foreach ($menus as $menu): ?>
-                                <tr>
-                                    <td><label for="qty-<?= (int) $menu['id'] ?>"><?= e($menu['name']) ?></label></td>
-                                    <td class="text-end"><?= e(formatRupiah($menu['price'])) ?></td>
-                                    <td>
-                                        <input type="number" class="form-control form-control-sm" min="0" step="1"
-                                               id="qty-<?= (int) $menu['id'] ?>" name="quantity[<?= (int) $menu['id'] ?>]"
-                                               value="<?= e(is_scalar($quantities[$menu['id']] ?? null) ? $quantities[$menu['id']] : '') ?>">
-                                    </td>
-                                </tr>
-                            <?php endforeach; ?>
-                            </tbody>
-                        </table>
+
+            <div class="col-lg-4">
+                <div class="card order-summary">
+                    <div class="card-header"><i class="bi bi-calculator me-1"></i>Ringkasan</div>
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between mb-2">
+                            <span class="text-muted">Jumlah item</span>
+                            <span id="order-items">0</span>
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center border-top pt-2 mb-3">
+                            <span class="fw-semibold">Total</span>
+                            <span class="fs-4 fw-bold text-primary" id="order-total">Rp 0</span>
+                        </div>
+                        <p class="small text-muted">Pratinjau ini dihitung di browser. Total final dihitung ulang oleh sistem dari harga menu di database.</p>
+                        <button type="submit" class="btn btn-primary w-100 mb-2"><i class="bi bi-check2-circle me-1"></i>Simpan Pesanan</button>
+                        <a href="<?= e(pageUrl('orders')) ?>" class="btn btn-light w-100">Batal</a>
                     </div>
-                    <div class="card-body text-muted small">
-                        Subtotal dan total dihitung otomatis oleh sistem berdasarkan harga menu saat pesanan disimpan.
-                    </div>
-                </div>
-                <div class="mt-3">
-                    <button type="submit" class="btn btn-primary">Simpan Pesanan</button>
-                    <a href="<?= e(pageUrl('orders')) ?>" class="btn btn-secondary">Kembali</a>
                 </div>
             </div>
         </div>
     </form>
 
 <?php else: ?>
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1 class="h3 mb-0">Detail Pesanan #<?= (int) $order['id'] ?></h1>
-        <a href="<?= e(pageUrl('orders')) ?>" class="btn btn-secondary no-print">Kembali</a>
-    </div>
+    <?php
+    $actions = '<button type="button" class="btn btn-outline-secondary me-2" onclick="window.print()"><i class="bi bi-printer me-1"></i>Cetak</button>'
+        . '<a href="' . e(pageUrl('orders')) . '" class="btn btn-light">Kembali</a>';
+    echo pageHeader('Pesanan #' . $order['id'], 'bi-receipt', 'Dibuat ' . formatDate($order['created_at']) . ' ' . formatTime(substr($order['created_at'], 11)), $actions);
+    ?>
     <div class="row g-4">
         <div class="col-lg-4">
-            <div class="card shadow-sm mb-3">
+            <div class="card mb-3">
                 <div class="card-body">
                     <dl class="mb-0">
-                        <dt>Pelanggan</dt>
-                        <dd><?= e($order['customer_name']) ?></dd>
-                        <dt>Tanggal Pesanan</dt>
+                        <dt class="text-muted small">Status</dt>
+                        <dd><?= statusBadge($order['status']) ?></dd>
+                        <dt class="text-muted small">Pelanggan</dt>
+                        <dd class="fw-semibold"><?= e($order['customer_name']) ?></dd>
+                        <dt class="text-muted small">Tanggal Pesanan</dt>
                         <dd><?= e(formatDate($order['order_date'])) ?></dd>
-                        <dt>Reservasi</dt>
-                        <dd><?= $order['reservation_id'] ? 'Reservasi #' . (int) $order['reservation_id'] : '-' ?></dd>
-                        <dt>Status</dt>
-                        <dd class="mb-0"><span class="badge text-bg-<?= e(statusBadgeClass($order['status'])) ?>"><?= e($order['status']) ?></span></dd>
+                        <dt class="text-muted small">Reservasi</dt>
+                        <dd class="mb-0">
+                            <?php if ($order['reservation_id']): ?>
+                                Meja <?= e($order['table_number']) ?> · <?= e(formatDate($order['reservation_date'])) ?> <?= e(formatTime($order['reservation_time'])) ?>
+                            <?php else: ?>
+                                <span class="text-muted">Tanpa reservasi</span>
+                            <?php endif; ?>
+                        </dd>
                     </dl>
                 </div>
             </div>
-            <div class="card shadow-sm no-print">
-                <div class="card-header bg-white"><strong>Ubah Status</strong></div>
-                <div class="card-body">
-                    <form method="post" class="d-flex gap-2">
-                        <input type="hidden" name="action" value="status">
-                        <input type="hidden" name="id" value="<?= (int) $order['id'] ?>">
-                        <select class="form-select" name="status" aria-label="Status pesanan">
-                            <?php foreach (ORDER_STATUSES as $status): ?>
-                                <option value="<?= e($status) ?>" <?= $order['status'] === $status ? 'selected' : '' ?>><?= e($status) ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                        <button type="submit" class="btn btn-primary">Simpan</button>
-                    </form>
+            <?php if (ORDER_TRANSITIONS[$order['status']] ?? []): ?>
+                <div class="card no-print">
+                    <div class="card-header"><i class="bi bi-arrow-repeat me-1"></i>Ubah Status</div>
+                    <div class="card-body d-grid gap-2">
+                        <?= actionButton('status', (int) $order['id'], 'Tandai Selesai', 'btn-success w-100', 'Tandai pesanan ini selesai?', ['status' => 'Selesai'], 'bi-check2-circle') ?>
+                        <?= actionButton('status', (int) $order['id'], 'Batalkan Pesanan', 'btn-outline-danger w-100', 'Batalkan pesanan ini? Tindakan tidak dapat diubah kembali.', ['status' => 'Dibatalkan'], 'bi-x-circle') ?>
+                    </div>
                 </div>
-            </div>
+            <?php else: ?>
+                <div class="alert alert-light border small no-print">
+                    <i class="bi bi-lock me-1"></i>Pesanan berstatus <?= e($order['status']) ?> sudah final dan tidak dapat diubah.
+                </div>
+            <?php endif; ?>
         </div>
         <div class="col-lg-8">
-            <div class="card shadow-sm">
-                <div class="card-header bg-white"><strong>Item Pesanan</strong></div>
+            <div class="card">
+                <div class="card-header"><i class="bi bi-list-check me-1"></i>Item Pesanan</div>
                 <div class="table-responsive">
-                    <table class="table mb-0">
-                        <thead class="table-light">
+                    <table class="table">
+                        <thead>
                         <tr>
                             <th>Menu</th>
                             <th class="text-end">Harga</th>
@@ -235,9 +294,9 @@ require __DIR__ . '/../includes/header.php';
                         <?php endforeach; ?>
                         </tbody>
                         <tfoot>
-                        <tr class="table-light">
+                        <tr>
                             <th colspan="3" class="text-end">Total</th>
-                            <th class="text-end"><?= e(formatRupiah($order['total_amount'])) ?></th>
+                            <th class="text-end fs-5 text-primary"><?= e(formatRupiah($order['total_amount'])) ?></th>
                         </tr>
                         </tfoot>
                     </table>

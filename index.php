@@ -2,6 +2,7 @@
 // Titik masuk aplikasi: memuat konfigurasi, fungsi, class, lalu halaman sesuai parameter ?page=
 session_start();
 define('APP_RUNNING', true);
+date_default_timezone_set('Asia/Jakarta');
 
 require_once __DIR__ . '/config/database.php';
 require_once __DIR__ . '/includes/functions.php';
@@ -11,15 +12,15 @@ require_once __DIR__ . '/classes/MenuItem.php';
 require_once __DIR__ . '/classes/Reservation.php';
 require_once __DIR__ . '/classes/Order.php';
 
-// Daftar halaman yang diizinkan (whitelist) => judul menu navigasi
+// Daftar halaman yang diizinkan (whitelist) => [judul menu navigasi, ikon Bootstrap Icons]
 $pages = [
-    'dashboard'    => 'Dashboard',
-    'customers'    => 'Pelanggan',
-    'tables'       => 'Meja',
-    'menu'         => 'Menu',
-    'reservations' => 'Reservasi',
-    'orders'       => 'Pesanan',
-    'reports'      => 'Laporan',
+    'dashboard'    => ['Dashboard', 'bi-speedometer2'],
+    'customers'    => ['Pelanggan', 'bi-people'],
+    'tables'       => ['Meja', 'bi-grid-3x3-gap'],
+    'menu'         => ['Menu', 'bi-journal-text'],
+    'reservations' => ['Reservasi', 'bi-calendar-check'],
+    'orders'       => ['Pesanan', 'bi-receipt'],
+    'reports'      => ['Laporan', 'bi-bar-chart-line'],
 ];
 
 $page = $_GET['page'] ?? 'dashboard';

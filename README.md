@@ -6,11 +6,18 @@ Spesifikasi lengkap ada di [`PRD-SPEC-LSP-Programmer-Sistem-Pemesanan-Restoran.m
 
 ## Fitur
 
-- **Dashboard**: jumlah pelanggan, meja, reservasi, dan pesanan, plus 5 reservasi terbaru.
-- **Pelanggan, Meja, Menu**: tambah, ubah, hapus. Data yang masih dipakai data lain tidak bisa dihapus, dan aplikasi menampilkan pesan yang jelas.
-- **Reservasi**: buat, ubah, dan batalkan. Jumlah tamu tidak boleh melebihi kapasitas meja, dan satu meja tidak boleh punya dua reservasi aktif (Menunggu/Dikonfirmasi) pada tanggal dan jam yang sama.
-- **Pesanan**: satu pesanan bisa berisi beberapa menu. Subtotal dan total dihitung otomatis. Harga disalin ke detail pesanan saat pesanan dibuat. Pesanan dan item-itemnya disimpan dalam satu transaksi database.
-- **Laporan**: laporan reservasi dan pesanan berdasarkan rentang tanggal, berisi jumlah reservasi, jumlah pesanan, dan total nilai pesanan. Tombol **Cetak** memakai fitur cetak browser.
+- **Dashboard**: total pelanggan, meja, reservasi, dan pesanan; reservasi hari ini, pesanan yang sedang diproses, dan pendapatan hari ini; tombol cepat Buat Reservasi / Buat Pesanan.
+- **Pelanggan, Meja, Menu**: tambah, ubah, hapus, dan cari. Data yang masih dipakai data lain tidak bisa dihapus, dan aplikasi menampilkan pesan yang jelas. Meja yang masih punya reservasi aktif mendatang tidak bisa dinonaktifkan.
+- **Reservasi**: daftar dengan filter Hari Ini / Akan Datang / Semua dan filter status. Aturannya:
+  - reservasi baru selalu berstatus **Menunggu**, lalu mengikuti alur **Menunggu → Dikonfirmasi → Selesai** (atau **Dibatalkan** selama masih aktif) lewat tombol di daftar;
+  - jam operasional **10:00–22:00** dan setiap reservasi memakai meja selama **2 jam**, jadi jam mulai paling lambat 20:00;
+  - meja yang sama tidak boleh punya dua reservasi aktif yang waktunya **tumpang tindih**;
+  - jumlah tamu tidak boleh melebihi kapasitas meja, dan tanggal/jam yang sudah lewat ditolak;
+  - reservasi yang sudah Selesai/Dibatalkan tidak bisa diubah, dan reservasi yang sudah punya pesanan tidak bisa dibatalkan atau diganti pelanggannya.
+- **Pesanan**: satu pesanan bisa berisi beberapa menu, dengan pratinjau subtotal dan total di form. Pilihan reservasi otomatis difilter sesuai pelanggan, hanya reservasi yang tamunya sudah datang (Dikonfirmasi/Selesai) yang bisa dipilih, dan tanggal pesanan otomatis mengikuti tanggal reservasi. Tanpa reservasi, tanggal pesanan tidak boleh melebihi hari ini. Harga disalin ke detail pesanan saat pesanan dibuat, dan pesanan beserta item-itemnya disimpan dalam satu transaksi database. Status mengikuti alur **Diproses → Selesai** atau **Dibatalkan**; status Selesai/Dibatalkan sudah final.
+- **Laporan**: laporan reservasi dan pesanan berdasarkan rentang tanggal (dengan pintasan Hari Ini, 7 Hari, Bulan Ini, Bulan Lalu), berisi jumlah reservasi, jumlah pesanan, dan total nilai pesanan tanpa pesanan Dibatalkan. Tombol **Cetak** memakai fitur cetak browser.
+
+Aturan operasional (jam buka/tutup, durasi reservasi, batas jumlah per menu) ada sebagai konstanta di awal `includes/functions.php` dan mudah diubah.
 
 ## Kebutuhan Software
 
@@ -20,7 +27,7 @@ Spesifikasi lengkap ada di [`PRD-SPEC-LSP-Programmer-Sistem-Pemesanan-Restoran.m
 | MySQL / MariaDB | MySQL 5.7+ / MariaDB 10.3+ |
 | Web server lokal | XAMPP atau Laragon (Apache + PHP + MySQL) |
 | Browser | Chrome, Firefox, atau Edge versi terbaru |
-| Internet | Diperlukan untuk memuat Bootstrap 5 dari CDN |
+| Internet | Diperlukan untuk memuat Bootstrap 5 dan Bootstrap Icons dari CDN |
 
 ## Struktur Folder
 
@@ -39,6 +46,9 @@ LSP-Programming/
 │   ├── header.php, navbar.php, footer.php
 ├── pages/                     # Halaman: dashboard, customers, tables, menu,
 │                              #          reservations, orders, reports
+├── assets/
+│   ├── css/style.css          # Tema warna di atas Bootstrap
+│   └── js/app.js              # Interaksi form (filter meja/reservasi, pratinjau total)
 ├── tests/test_functions.php   # Unit test (PHP CLI)
 ├── docs/laporan.md            # Laporan pengembangan
 ├── docs/presentasi.md         # Outline slide presentasi
@@ -66,7 +76,7 @@ Jalankan **Apache** dan **MySQL** dari XAMPP Control Panel atau Laragon, lalu pi
   ```
   Tekan Enter saat diminta password jika user `root` tidak memakai password (bawaan XAMPP/Laragon).
 
-Skrip ini membuat database `restoran_db`, keenam tabelnya, dan data contoh (3 pelanggan, 4 meja, 5 menu).
+Skrip ini membuat database `restoran_db`, keenam tabelnya, dan data contoh: 3 pelanggan, 4 meja, 5 menu, 4 reservasi, dan 3 pesanan. Tanggal reservasi dan pesanan contoh dibuat relatif terhadap hari ini (kemarin, hari ini, besok), jadi dashboard langsung terisi saat demo.
 
 > **Perhatian:** `database.sql` menghapus tabel lama sebelum membuatnya lagi. Menjalankannya ulang akan mengosongkan data.
 
@@ -81,6 +91,8 @@ define('DB_NAME', 'restoran_db');
 define('DB_USER', 'root');
 define('DB_PASS', '');   // isi jika user MySQL memakai password
 ```
+
+Aplikasi memakai zona waktu **Asia/Jakarta** (diatur di `index.php`) untuk menentukan "hari ini" dan jam yang sudah lewat. Ganti nilainya jika restoran berada di zona waktu lain.
 
 ### 4. Jalankan aplikasi
 

@@ -4,11 +4,11 @@ defined('APP_RUNNING') or exit('Akses langsung tidak diizinkan.');
 $tableModel = new RestaurantTable($db);
 $errors = [];
 $form = ['id' => '', 'table_number' => '', 'capacity' => '', 'status' => 'Aktif'];
+$search = query('q');
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (input('action') === 'delete') {
-        $errors = $tableModel->delete((int) input('id'));
-        $errors ? setFlash('danger', implode(' ', $errors)) : setFlash('success', 'Meja berhasil dihapus.');
+        flashResult($tableModel->delete((int) input('id')), 'Meja berhasil dihapus.');
         redirect(pageUrl('tables'));
     }
 
@@ -34,17 +34,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $isEdit = $form['id'] !== '';
-$tables = $tableModel->all();
+$tables = $tableModel->all($search);
 
 $pageTitle = 'Data Meja';
 require __DIR__ . '/../includes/header.php';
+echo pageHeader('Data Meja', 'bi-grid-3x3-gap', 'Meja Nonaktif tidak dapat dipilih untuk reservasi.');
 ?>
-<h1 class="h3 mb-4">Data Meja</h1>
 
 <div class="row g-4">
     <div class="col-lg-4">
-        <div class="card shadow-sm">
-            <div class="card-header bg-white"><strong><?= $isEdit ? 'Ubah Meja' : 'Tambah Meja' ?></strong></div>
+        <div class="card">
+            <div class="card-header"><i class="bi <?= $isEdit ? 'bi-pencil-square' : 'bi-plus-square' ?> me-1"></i><?= $isEdit ? 'Ubah Meja' : 'Tambah Meja' ?></div>
             <div class="card-body">
                 <?= showErrors($errors) ?>
                 <form method="post">
@@ -66,9 +66,9 @@ require __DIR__ . '/../includes/header.php';
                             <?php endforeach; ?>
                         </select>
                     </div>
-                    <button type="submit" class="btn btn-primary">Simpan</button>
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-save me-1"></i>Simpan</button>
                     <?php if ($isEdit): ?>
-                        <a href="<?= e(pageUrl('tables')) ?>" class="btn btn-secondary">Batal</a>
+                        <a href="<?= e(pageUrl('tables')) ?>" class="btn btn-light">Batal</a>
                     <?php endif; ?>
                 </form>
             </div>
@@ -76,38 +76,46 @@ require __DIR__ . '/../includes/header.php';
     </div>
 
     <div class="col-lg-8">
-        <div class="card shadow-sm">
-            <div class="card-header bg-white"><strong>Daftar Meja</strong></div>
-            <div class="table-responsive">
-                <table class="table table-hover mb-0">
-                    <thead class="table-light">
-                    <tr>
-                        <th>No</th>
-                        <th>Nomor Meja</th>
-                        <th>Kapasitas</th>
-                        <th>Status</th>
-                        <th class="text-end">Aksi</th>
-                    </tr>
-                    </thead>
-                    <tbody>
-                    <?php if (empty($tables)): ?>
-                        <tr><td colspan="5" class="text-center text-muted py-3">Belum ada data meja.</td></tr>
-                    <?php endif; ?>
-                    <?php foreach ($tables as $i => $table): ?>
-                        <tr>
-                            <td><?= $i + 1 ?></td>
-                            <td><?= e($table['table_number']) ?></td>
-                            <td><?= (int) $table['capacity'] ?> orang</td>
-                            <td><span class="badge text-bg-<?= e(statusBadgeClass($table['status'])) ?>"><?= e($table['status']) ?></span></td>
-                            <td class="text-end text-nowrap">
-                                <a href="<?= e(pageUrl('tables', ['edit' => $table['id']])) ?>" class="btn btn-sm btn-outline-primary">Ubah</a>
-                                <?= actionButton('delete', (int) $table['id'], 'Hapus', 'btn-outline-danger', 'Hapus meja ' . $table['table_number'] . '?') ?>
-                            </td>
-                        </tr>
-                    <?php endforeach; ?>
-                    </tbody>
-                </table>
+        <div class="card">
+            <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+                <span><i class="bi bi-list-ul me-1"></i>Daftar Meja</span>
+                <form method="get" class="d-flex gap-2" role="search">
+                    <input type="hidden" name="page" value="tables">
+                    <input type="search" name="q" class="form-control form-control-sm" placeholder="Cari nomor meja" value="<?= e($search) ?>" aria-label="Cari meja">
+                    <button type="submit" class="btn btn-sm btn-outline-secondary"><i class="bi bi-search"></i></button>
+                </form>
             </div>
+            <?php if (empty($tables)): ?>
+                <?= emptyState($search !== '' ? 'Meja dengan kata kunci "' . $search . '" tidak ditemukan.' : 'Belum ada data meja.') ?>
+            <?php else: ?>
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                        <tr>
+                            <th>Nomor Meja</th>
+                            <th>Kapasitas</th>
+                            <th>Status</th>
+                            <th class="text-center">Reservasi Aktif</th>
+                            <th class="text-end">Aksi</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        <?php foreach ($tables as $table): ?>
+                            <tr>
+                                <td class="fw-semibold"><?= e($table['table_number']) ?></td>
+                                <td><i class="bi bi-people text-muted me-1"></i><?= (int) $table['capacity'] ?> orang</td>
+                                <td><?= statusBadge($table['status']) ?></td>
+                                <td class="text-center"><?= (int) $table['upcoming_count'] ?></td>
+                                <td class="text-end text-nowrap">
+                                    <a href="<?= e(pageUrl('tables', ['edit' => $table['id']])) ?>" class="btn btn-sm btn-outline-primary" title="Ubah"><i class="bi bi-pencil"></i></a>
+                                    <?= actionButton('delete', (int) $table['id'], 'Hapus', 'btn-outline-danger', 'Hapus meja ' . $table['table_number'] . '?', [], 'bi-trash', true) ?>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            <?php endif; ?>
         </div>
     </div>
 </div>

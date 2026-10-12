@@ -6,9 +6,11 @@ class MenuItem extends BaseModel
 {
     protected string $table = 'menu_items';
 
-    public function all(): array
+    public function all(string $search = ''): array
     {
-        return $this->db->query('SELECT * FROM menu_items ORDER BY name')->fetchAll();
+        $stmt = $this->db->prepare('SELECT * FROM menu_items WHERE name LIKE ? ORDER BY name');
+        $stmt->execute(['%' . $search . '%']);
+        return $stmt->fetchAll();
     }
 
     /** Menu yang tersedia, diindeks berdasarkan id (dipakai saat membuat pesanan). */
