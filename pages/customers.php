@@ -4,11 +4,11 @@ defined('APP_RUNNING') or exit('Akses langsung tidak diizinkan.');
 $customerModel = new Customer($db);
 $errors = [];
 $form = ['id' => '', 'name' => '', 'phone' => '', 'email' => ''];
+$search = query('q');
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (input('action') === 'delete') {
-        $errors = $customerModel->delete((int) input('id'));
-        $errors ? setFlash('danger', implode(' ', $errors)) : setFlash('success', 'Pelanggan berhasil dihapus.');
+        flashResult($customerModel->delete((int) input('id')), 'Pelanggan berhasil dihapus.');
         redirect(pageUrl('customers'));
     }
 
@@ -29,17 +29,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $isEdit = $form['id'] !== '';
-$customers = $customerModel->all();
+$customers = $customerModel->all($search);
 
 $pageTitle = 'Data Pelanggan';
 require __DIR__ . '/../includes/header.php';
+echo pageHeader('Data Pelanggan', 'bi-people', 'Kelola data pelanggan restoran.');
 ?>
-<h1 class="h3 mb-4">Data Pelanggan</h1>
 
 <div class="row g-4">
     <div class="col-lg-4">
-        <div class="card shadow-sm">
-            <div class="card-header bg-white"><strong><?= $isEdit ? 'Ubah Pelanggan' : 'Tambah Pelanggan' ?></strong></div>
+        <div class="card">
+            <div class="card-header"><i class="bi <?= $isEdit ? 'bi-pencil-square' : 'bi-person-plus' ?> me-1"></i><?= $isEdit ? 'Ubah Pelanggan' : 'Tambah Pelanggan' ?></div>
             <div class="card-body">
                 <?= showErrors($errors) ?>
                 <form method="post">
@@ -51,15 +51,16 @@ require __DIR__ . '/../includes/header.php';
                     </div>
                     <div class="mb-3">
                         <label for="phone" class="form-label">Nomor Telepon</label>
-                        <input type="tel" class="form-control" id="phone" name="phone" maxlength="16" required value="<?= e($form['phone']) ?>" placeholder="08xxxxxxxxxx">
+                        <input type="tel" class="form-control" id="phone" name="phone" maxlength="16" required pattern="\+?[0-9]{8,15}" value="<?= e($form['phone']) ?>" placeholder="08xxxxxxxxxx">
+                        <div class="form-text">8–15 digit angka.</div>
                     </div>
                     <div class="mb-3">
                         <label for="email" class="form-label">Email <span class="text-muted">(opsional)</span></label>
                         <input type="email" class="form-control" id="email" name="email" maxlength="100" value="<?= e($form['email']) ?>">
                     </div>
-                    <button type="submit" class="btn btn-primary">Simpan</button>
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-save me-1"></i>Simpan</button>
                     <?php if ($isEdit): ?>
-                        <a href="<?= e(pageUrl('customers')) ?>" class="btn btn-secondary">Batal</a>
+                        <a href="<?= e(pageUrl('customers')) ?>" class="btn btn-light">Batal</a>
                     <?php endif; ?>
                 </form>
             </div>
@@ -67,38 +68,49 @@ require __DIR__ . '/../includes/header.php';
     </div>
 
     <div class="col-lg-8">
-        <div class="card shadow-sm">
-            <div class="card-header bg-white"><strong>Daftar Pelanggan</strong></div>
-            <div class="table-responsive">
-                <table class="table table-hover mb-0">
-                    <thead class="table-light">
-                    <tr>
-                        <th>No</th>
-                        <th>Nama</th>
-                        <th>Telepon</th>
-                        <th>Email</th>
-                        <th class="text-end">Aksi</th>
-                    </tr>
-                    </thead>
-                    <tbody>
-                    <?php if (empty($customers)): ?>
-                        <tr><td colspan="5" class="text-center text-muted py-3">Belum ada data pelanggan.</td></tr>
-                    <?php endif; ?>
-                    <?php foreach ($customers as $i => $customer): ?>
-                        <tr>
-                            <td><?= $i + 1 ?></td>
-                            <td><?= e($customer['name']) ?></td>
-                            <td><?= e($customer['phone']) ?></td>
-                            <td><?= e($customer['email'] ?? '-') ?></td>
-                            <td class="text-end text-nowrap">
-                                <a href="<?= e(pageUrl('customers', ['edit' => $customer['id']])) ?>" class="btn btn-sm btn-outline-primary">Ubah</a>
-                                <?= actionButton('delete', (int) $customer['id'], 'Hapus', 'btn-outline-danger', 'Hapus pelanggan ' . $customer['name'] . '?') ?>
-                            </td>
-                        </tr>
-                    <?php endforeach; ?>
-                    </tbody>
-                </table>
+        <div class="card">
+            <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+                <span><i class="bi bi-list-ul me-1"></i>Daftar Pelanggan</span>
+                <form method="get" class="d-flex gap-2" role="search">
+                    <input type="hidden" name="page" value="customers">
+                    <input type="search" name="q" class="form-control form-control-sm" placeholder="Cari nama / telepon" value="<?= e($search) ?>" aria-label="Cari pelanggan">
+                    <button type="submit" class="btn btn-sm btn-outline-secondary"><i class="bi bi-search"></i></button>
+                </form>
             </div>
+            <?php if (empty($customers)): ?>
+                <?= emptyState($search !== '' ? 'Pelanggan dengan kata kunci "' . $search . '" tidak ditemukan.' : 'Belum ada data pelanggan.') ?>
+            <?php else: ?>
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                        <tr>
+                            <th>Nama</th>
+                            <th>Kontak</th>
+                            <th class="text-center">Reservasi</th>
+                            <th class="text-center">Pesanan</th>
+                            <th class="text-end">Aksi</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        <?php foreach ($customers as $customer): ?>
+                            <tr>
+                                <td class="fw-semibold"><?= e($customer['name']) ?></td>
+                                <td>
+                                    <div><i class="bi bi-telephone text-muted me-1"></i><?= e($customer['phone']) ?></div>
+                                    <div class="small text-muted"><i class="bi bi-envelope me-1"></i><?= e($customer['email'] ?? '-') ?></div>
+                                </td>
+                                <td class="text-center"><?= (int) $customer['reservation_count'] ?></td>
+                                <td class="text-center"><?= (int) $customer['order_count'] ?></td>
+                                <td class="text-end text-nowrap">
+                                    <a href="<?= e(pageUrl('customers', ['edit' => $customer['id']])) ?>" class="btn btn-sm btn-outline-primary" title="Ubah"><i class="bi bi-pencil"></i></a>
+                                    <?= actionButton('delete', (int) $customer['id'], 'Hapus', 'btn-outline-danger', 'Hapus pelanggan ' . $customer['name'] . '?', [], 'bi-trash', true) ?>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            <?php endif; ?>
         </div>
     </div>
 </div>

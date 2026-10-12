@@ -73,9 +73,11 @@ check('Kuantitas 0 ditolak', validateQuantity('0') === false);
 check('Kuantitas negatif ditolak', validateQuantity('-1') === false);
 check('Kuantitas desimal 1.5 ditolak', validateQuantity('1.5') === false);
 check('Kuantitas bukan angka ditolak', validateQuantity('dua') === false);
+check('Kuantitas 100 (batas maksimal) valid', validateQuantity('100') === true);
+check('Kuantitas 101 (melebihi batas) ditolak', validateQuantity('101') === false);
 
 // ---------------------------------------------------------------------------
-section('Penolakan reservasi bentrok');
+section('Penolakan reservasi bentrok (slot 2 jam)');
 
 $existing = [
     ['id' => 1, 'table_id' => 2, 'reservation_date' => '2026-10-20', 'reservation_time' => '19:00:00', 'status' => 'Menunggu'],
@@ -87,9 +89,47 @@ check('Meja, tanggal, dan waktu sama (format HH:MM dari form) ditolak', hasReser
 check('Bentrok dengan reservasi Dikonfirmasi ditolak', hasReservationConflict($existing, 1, '2026-10-20', '12:00:00') === true);
 check('Reservasi lama berstatus Dibatalkan tidak dianggap bentrok', hasReservationConflict($existing, 3, '2026-10-20', '19:00') === false);
 check('Meja berbeda pada waktu sama diterima', hasReservationConflict($existing, 4, '2026-10-20', '19:00') === false);
-check('Waktu berbeda pada meja sama diterima', hasReservationConflict($existing, 2, '2026-10-20', '20:00') === false);
+check('Jam tumpang tindih (19:00 vs 20:30) pada meja sama ditolak', hasReservationConflict($existing, 2, '2026-10-20', '20:30') === true);
+check('Jam tumpang tindih sebelum reservasi lain (17:30 vs 19:00) ditolak', hasReservationConflict($existing, 2, '2026-10-20', '17:30') === true);
+check('Tepat setelah slot berakhir (19:00 vs 21:00) diterima', hasReservationConflict($existing, 2, '2026-10-20', '21:00') === false);
+check('Tepat sebelum slot dimulai (17:00 vs 19:00) diterima', hasReservationConflict($existing, 2, '2026-10-20', '17:00') === false);
 check('Tanggal berbeda pada meja sama diterima', hasReservationConflict($existing, 2, '2026-10-21', '19:00') === false);
 check('Mengubah reservasi itu sendiri tidak dianggap bentrok', hasReservationConflict($existing, 2, '2026-10-20', '19:00', 1) === false);
+
+// ---------------------------------------------------------------------------
+section('Jam operasional dan waktu reservasi');
+
+check('Jam mulai terakhir adalah 20:00 (tutup 22:00 - durasi 2 jam)', latestReservationStart() === '20:00');
+check('Reservasi 10:00 (jam buka) diterima', isWithinOperatingHours('10:00') === true);
+check('Reservasi 20:00 (selesai tepat 22:00) diterima', isWithinOperatingHours('20:00') === true);
+check('Reservasi 09:30 (sebelum buka) ditolak', isWithinOperatingHours('09:30') === false);
+check('Reservasi 20:30 (melewati jam tutup) ditolak', isWithinOperatingHours('20:30') === false);
+
+$now = new DateTimeImmutable('2026-10-20 15:00:00');
+check('Jam yang sudah lewat hari ini (12:00) terdeteksi', isPastDateTime('2026-10-20', '12:00', $now) === true);
+check('Jam yang belum lewat hari ini (19:00) tidak dianggap lewat', isPastDateTime('2026-10-20', '19:00', $now) === false);
+check('Tanggal kemarin terdeteksi sudah lewat', isPastDateTime('2026-10-19', '19:00', $now) === true);
+
+$validReservation = ['customer_id' => '1', 'table_id' => '2', 'reservation_date' => '2026-10-21', 'reservation_time' => '19:00', 'guest_count' => '4'];
+check('Data reservasi lengkap dan valid diterima', validateReservationData($validReservation, $now) === []);
+check('Reservasi di waktu yang sudah lewat ditolak', validateReservationData(['reservation_date' => '2026-10-19'] + $validReservation, $now) !== []);
+check('Reservasi di luar jam operasional (23:00) ditolak', validateReservationData(['reservation_time' => '23:00'] + $validReservation, $now) !== []);
+
+// ---------------------------------------------------------------------------
+section('Alur status reservasi dan pesanan');
+
+check('Reservasi Menunggu -> Dikonfirmasi diizinkan', canChangeStatus('Menunggu', 'Dikonfirmasi', RESERVATION_TRANSITIONS) === true);
+check('Reservasi Dikonfirmasi -> Selesai diizinkan', canChangeStatus('Dikonfirmasi', 'Selesai', RESERVATION_TRANSITIONS) === true);
+check('Reservasi Menunggu -> Selesai (melompati konfirmasi) ditolak', canChangeStatus('Menunggu', 'Selesai', RESERVATION_TRANSITIONS) === false);
+check('Reservasi Dibatalkan -> Dikonfirmasi ditolak', canChangeStatus('Dibatalkan', 'Dikonfirmasi', RESERVATION_TRANSITIONS) === false);
+check('Reservasi Selesai -> Dibatalkan ditolak', canChangeStatus('Selesai', 'Dibatalkan', RESERVATION_TRANSITIONS) === false);
+check('Pesanan Diproses -> Selesai diizinkan', canChangeStatus('Diproses', 'Selesai', ORDER_TRANSITIONS) === true);
+check('Pesanan Diproses -> Dibatalkan diizinkan', canChangeStatus('Diproses', 'Dibatalkan', ORDER_TRANSITIONS) === true);
+check('Pesanan Selesai -> Diproses ditolak', canChangeStatus('Selesai', 'Diproses', ORDER_TRANSITIONS) === false);
+check('Pesanan Dibatalkan -> Selesai ditolak', canChangeStatus('Dibatalkan', 'Selesai', ORDER_TRANSITIONS) === false);
+
+check('Tanggal pesanan hari ini diterima', validateOrderDate('2026-10-20', '2026-10-20') === []);
+check('Tanggal pesanan besok ditolak', validateOrderDate('2026-10-21', '2026-10-20') !== []);
 
 // ---------------------------------------------------------------------------
 section('Validasi data lain');
