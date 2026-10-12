@@ -3,12 +3,15 @@ defined('APP_RUNNING') or exit('Akses langsung tidak diizinkan.');
 
 $orderModel = new Order($db);
 $menuModel = new MenuItem($db);
+$customerModel = new Customer($db);
 $today = date('Y-m-d');
 $view = query('action', 'list');
 $statusFilter = in_array(query('status'), ORDER_STATUSES, true) ? query('status') : '';
 $errors = [];
 $form = ['customer_id' => '', 'reservation_id' => '', 'order_date' => $today];
 $quantities = [];
+$customerMode = 'existing';
+$newCustomer = ['name' => '', 'phone' => '', 'email' => ''];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (input('action') === 'status') {
@@ -23,10 +26,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $form[$field] = input($field);
     }
     $quantities = is_array($_POST['quantity'] ?? null) ? $_POST['quantity'] : [];
-    $result = $orderModel->create($form, $quantities, $menuModel);
+    $customerMode = input('customer_mode') === 'new' ? 'new' : 'existing';
+    $newCustomer = ['name' => input('new_customer_name'), 'phone' => input('new_customer_phone'), 'email' => input('new_customer_email')];
+    $orderId = null;
+    $result = $customerModel->runWithCustomer($customerMode, $form['customer_id'], $newCustomer,
+        function (string $customerId) use ($form, $quantities, $orderModel, $menuModel, &$orderId): array {
+            $created = $orderModel->create(['customer_id' => $customerId] + $form, $quantities, $menuModel);
+            $orderId = $created['id'];
+            return $created['errors'];
+        });
     if (!$result['errors']) {
-        setFlash('success', 'Pesanan berhasil disimpan.');
-        redirect(pageUrl('orders', ['action' => 'view', 'id' => $result['id']]));
+        $successMessage = 'Pesanan berhasil disimpan.';
+        if ($customerMode === 'new') {
+            $successMessage .= ' Pelanggan baru "' . $newCustomer['name'] . '" ditambahkan ke data Pelanggan.';
+        }
+        setFlash('success', $successMessage);
+        redirect(pageUrl('orders', ['action' => 'view', 'id' => $orderId]));
     }
     $errors = $result['errors'];
     $view = 'create';
@@ -40,7 +55,7 @@ if ($view === 'view') {
     }
     $pageTitle = 'Detail Pesanan #' . $order['id'];
 } elseif ($view === 'create') {
-    $customers = (new Customer($db))->all();
+    $customers = $customerModel->all();
     $reservations = (new Reservation($db))->forOrder();
     $menus = $menuModel->available();
 
@@ -132,18 +147,10 @@ require __DIR__ . '/../includes/header.php';
                     <div class="card-header"><i class="bi bi-person-lines-fill me-1"></i>Data Pesanan</div>
                     <div class="card-body">
                         <div class="row g-3">
-                            <div class="col-md-4">
-                                <label for="customer_id" class="form-label">Pelanggan</label>
-                                <select class="form-select" id="customer_id" name="customer_id" required>
-                                    <option value="">-- Pilih Pelanggan --</option>
-                                    <?php foreach ($customers as $customer): ?>
-                                        <option value="<?= (int) $customer['id'] ?>" <?= $form['customer_id'] === (string) $customer['id'] ? 'selected' : '' ?>>
-                                            <?= e($customer['name']) ?>
-                                        </option>
-                                    <?php endforeach; ?>
-                                </select>
+                            <div class="col-12">
+                                <?php require __DIR__ . '/../includes/customer_picker.php'; ?>
                             </div>
-                            <div class="col-md-5">
+                            <div class="col-md-8">
                                 <label for="reservation_id" class="form-label">Reservasi <span class="text-muted">(opsional)</span></label>
                                 <select class="form-select" id="reservation_id" name="reservation_id">
                                     <option value="">-- Tanpa Reservasi --</option>
@@ -156,9 +163,9 @@ require __DIR__ . '/../includes/header.php';
                                         </option>
                                     <?php endforeach; ?>
                                 </select>
-                                <div class="form-text">Hanya reservasi pelanggan terpilih yang sudah Dikonfirmasi/Selesai.</div>
+                                <div class="form-text" id="reservation-hint">Hanya reservasi pelanggan terpilih yang sudah Dikonfirmasi/Selesai.</div>
                             </div>
-                            <div class="col-md-3">
+                            <div class="col-md-4">
                                 <label for="order_date" class="form-label">Tanggal</label>
                                 <input type="date" class="form-control" id="order_date" name="order_date" required max="<?= e($today) ?>" value="<?= e($form['order_date']) ?>">
                                 <div class="form-text" id="order-date-hint">Tidak boleh melebihi hari ini.</div>

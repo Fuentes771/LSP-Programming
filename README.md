@@ -7,13 +7,14 @@ Spesifikasi lengkap ada di [`PRD-SPEC-LSP-Programmer-Sistem-Pemesanan-Restoran.m
 ## Fitur
 
 - **Dashboard**: total pelanggan, meja, reservasi, dan pesanan; reservasi hari ini, pesanan yang sedang diproses, dan pendapatan hari ini; tombol cepat Buat Reservasi / Buat Pesanan.
-- **Pelanggan, Meja, Menu**: tambah, ubah, hapus, dan cari. Data yang masih dipakai data lain tidak bisa dihapus, dan aplikasi menampilkan pesan yang jelas. Meja yang masih punya reservasi aktif mendatang tidak bisa dinonaktifkan.
+- **Pelanggan, Meja, Menu**: tambah, ubah, hapus, dan cari. Nomor telepon pelanggan harus unik. Data yang masih dipakai data lain tidak bisa dihapus, dan aplikasi menampilkan pesan yang jelas. Meja yang masih punya reservasi aktif mendatang tidak bisa dinonaktifkan.
 - **Reservasi**: daftar dengan filter Hari Ini / Akan Datang / Semua dan filter status. Aturannya:
   - reservasi baru selalu berstatus **Menunggu**, lalu mengikuti alur **Menunggu → Dikonfirmasi → Selesai** (atau **Dibatalkan** selama masih aktif) lewat tombol di daftar;
   - jam operasional **10:00–22:00** dan setiap reservasi memakai meja selama **2 jam**, jadi jam mulai paling lambat 20:00;
   - meja yang sama tidak boleh punya dua reservasi aktif yang waktunya **tumpang tindih**;
   - jumlah tamu tidak boleh melebihi kapasitas meja, dan tanggal/jam yang sudah lewat ditolak;
   - reservasi yang sudah Selesai/Dibatalkan tidak bisa diubah, dan reservasi yang sudah punya pesanan tidak bisa dibatalkan atau diganti pelanggannya.
+- **Pelanggan baru langsung dari form**: Di form reservasi dan pesanan, pelanggan bisa dipilih dari daftar **atau langsung ditambahkan sebagai pelanggan baru** (nama, telepon, email opsional). Pelanggan baru otomatis tersimpan ke data Pelanggan, dan disimpan dalam satu transaksi bersama reservasi/pesanannya: jika reservasi/pesanan gagal, pelanggan baru juga tidak tersimpan. Nomor telepon harus unik.
 - **Pesanan**: satu pesanan bisa berisi beberapa menu, dengan pratinjau subtotal dan total di form. Pilihan reservasi otomatis difilter sesuai pelanggan, hanya reservasi yang tamunya sudah datang (Dikonfirmasi/Selesai) yang bisa dipilih, dan tanggal pesanan otomatis mengikuti tanggal reservasi. Tanpa reservasi, tanggal pesanan tidak boleh melebihi hari ini. Harga disalin ke detail pesanan saat pesanan dibuat, dan pesanan beserta item-itemnya disimpan dalam satu transaksi database. Status mengikuti alur **Diproses → Selesai** atau **Dibatalkan**; status Selesai/Dibatalkan sudah final.
 - **Laporan**: laporan reservasi dan pesanan berdasarkan rentang tanggal (dengan pintasan Hari Ini, 7 Hari, Bulan Ini, Bulan Lalu), berisi jumlah reservasi, jumlah pesanan, dan total nilai pesanan tanpa pesanan Dibatalkan. Tombol **Cetak** memakai fitur cetak browser.
 
@@ -43,6 +44,7 @@ LSP-Programming/
 │   └── Order.php
 ├── includes/
 │   ├── functions.php          # Fungsi validasi, perhitungan, dan helper
+│   ├── customer_picker.php    # Pilihan pelanggan terdaftar / pelanggan baru di form
 │   ├── header.php, navbar.php, footer.php
 ├── pages/                     # Halaman: dashboard, customers, tables, menu,
 │                              #          reservations, orders, reports

@@ -130,8 +130,13 @@ class Order extends BaseModel
         $items = $built['items'];
         $total = calculateOrderTotal($items);
 
+        // Jika dipanggil di dalam transaksi lain (misalnya bersama pembuatan pelanggan baru),
+        // transaksi luar yang menentukan commit/rollback
+        $ownTransaction = !$this->db->inTransaction();
         try {
-            $this->db->beginTransaction();
+            if ($ownTransaction) {
+                $this->db->beginTransaction();
+            }
 
             $stmt = $this->db->prepare('
                 INSERT INTO restaurant_orders (customer_id, reservation_id, order_date, status, total_amount)
@@ -159,10 +164,12 @@ class Order extends BaseModel
                 ]);
             }
 
-            $this->db->commit();
+            if ($ownTransaction) {
+                $this->db->commit();
+            }
         } catch (PDOException $e) {
             // Batalkan seluruh perubahan agar tidak ada pesanan yang tersimpan setengah
-            if ($this->db->inTransaction()) {
+            if ($ownTransaction && $this->db->inTransaction()) {
                 $this->db->rollBack();
             }
             error_log('Gagal menyimpan pesanan: ' . $e->getMessage());

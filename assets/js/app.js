@@ -7,6 +7,29 @@ document.addEventListener('DOMContentLoaded', function () {
         }, 5000);
     });
 
+    // Pemilih pelanggan: tampilkan pilihan pelanggan terdaftar atau isian pelanggan baru
+    var currentCustomerMode = function (picker) {
+        var checked = picker.querySelector('input[name="customer_mode"]:checked');
+        return checked ? checked.value : 'existing';
+    };
+    document.querySelectorAll('.customer-picker').forEach(function (picker) {
+        var applyMode = function () {
+            var mode = currentCustomerMode(picker);
+            picker.querySelectorAll('[data-customer-section]').forEach(function (section) {
+                var active = section.dataset.customerSection === mode;
+                section.hidden = !active;
+                section.querySelectorAll('[data-required]').forEach(function (field) {
+                    field.required = active;
+                });
+            });
+            picker.dispatchEvent(new CustomEvent('customer-mode-change', { bubbles: true }));
+        };
+        picker.querySelectorAll('input[name="customer_mode"]').forEach(function (radio) {
+            radio.addEventListener('change', applyMode);
+        });
+        applyMode();
+    });
+
     // Form reservasi: nonaktifkan meja yang kapasitasnya kurang dari jumlah tamu
     var guestInput = document.getElementById('guest_count');
     var tableSelect = document.getElementById('table_id');
@@ -38,9 +61,22 @@ document.addEventListener('DOMContentLoaded', function () {
     var reservationSelect = document.getElementById('reservation_id');
     var orderDate = document.getElementById('order_date');
     var dateHint = document.getElementById('order-date-hint');
+    var reservationHint = document.getElementById('reservation-hint');
+    var picker = orderForm.querySelector('.customer-picker');
+    var isNewCustomer = function () {
+        return picker !== null && currentCustomerMode(picker) === 'new';
+    };
 
-    // Reservasi hanya menampilkan milik pelanggan yang dipilih
+    // Reservasi hanya menampilkan milik pelanggan yang dipilih (pelanggan baru belum punya reservasi)
     var filterReservations = function () {
+        var newCustomer = isNewCustomer();
+        reservationSelect.disabled = newCustomer;
+        reservationHint.textContent = newCustomer
+            ? 'Pelanggan baru belum memiliki reservasi.'
+            : 'Hanya reservasi pelanggan terpilih yang sudah Dikonfirmasi/Selesai.';
+        if (newCustomer) {
+            reservationSelect.value = '';
+        }
         var customerId = customerSelect.value;
         Array.prototype.forEach.call(reservationSelect.options, function (option) {
             if (!option.dataset.customer) {
@@ -71,6 +107,7 @@ document.addEventListener('DOMContentLoaded', function () {
     };
 
     customerSelect.addEventListener('change', filterReservations);
+    orderForm.addEventListener('customer-mode-change', filterReservations);
     reservationSelect.addEventListener('change', function () {
         var selected = reservationSelect.selectedOptions[0];
         if (selected && selected.dataset.customer) {
