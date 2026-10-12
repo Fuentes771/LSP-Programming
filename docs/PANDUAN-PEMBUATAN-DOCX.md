@@ -43,6 +43,8 @@
 | 9 | `08-erd.drawio` | ERD / desain database (Bagian 5.4). |
 | 10 | `01-use-case.png` … `08-erd.png` | Ekspor PNG setiap diagram (skala 2×, latar putih) untuk disisipkan ke DOCX. |
 
+**Input tambahan dari user:** 16 tangkapan layar aplikasi dari folder `docs/screenshots/` (`01-dashboard.png` … `16-unit-test.png`, daftar lengkap di Bab V). Gunakan file tersebut apa adanya; jangan membuat tangkapan layar tiruan.
+
 Sebagai alternatif dari file 2–9, boleh dibuat **satu file `diagram-sistem-restoran.drawio` multi-halaman** (satu tab per diagram, nama tab sama dengan nama file di atas).
 
 **Aturan wajib:**
@@ -1038,7 +1040,27 @@ Perkiraan total: **20–30 halaman**. Penomoran gambar per bab (Gambar 4.1, 4.2,
 ### BAB V — IMPLEMENTASI FITUR (±3–5 halaman)
 
 - **Tabel 5.1** fitur → file → keterangan (dashboard, pelanggan, meja, menu, reservasi, pesanan, laporan).
-- Untuk setiap fitur, 1 paragraf singkat. Sisipkan **tangkapan layar** bila tersedia (Gambar 5.1 dst.). Jika tidak ada, gunakan kotak placeholder bertuliskan `[Tangkapan layar: Halaman Dashboard]`. Daftar tangkapan layar yang disarankan: Dashboard, Data Pelanggan (dengan pencarian), Daftar Reservasi (tab Semua, terlihat tombol Konfirmasi/Selesai/Pesanan), Form Reservasi (meja kapasitas kurang tidak bisa dipilih), Pesan error tumpang tindih, Form Pesanan (pratinjau total), Detail Pesanan, Laporan, dan Laporan mode cetak.
+- Untuk setiap fitur, 1 paragraf singkat disertai **tangkapan layar** dari folder `docs/screenshots/` (dilampirkan user). Gunakan urutan dan caption berikut. Jika ada file yang tidak dilampirkan, ganti dengan kotak placeholder berlabel nama file tersebut.
+
+| Gambar | File | Caption |
+|---|---|---|
+| 5.1 | `01-dashboard.png` | Halaman Dashboard |
+| 5.2 | `02-pelanggan.png` | Halaman Data Pelanggan |
+| 5.3 | `03-meja.png` | Halaman Data Meja |
+| 5.4 | `04-menu.png` | Halaman Data Menu |
+| 5.5 | `05-reservasi-daftar.png` | Daftar Reservasi dengan Tombol Aksi Sesuai Status |
+| 5.6 | `06-reservasi-form-pelanggan-baru.png` | Form Reservasi dengan Pelanggan Baru |
+| 5.7 | `07-reservasi-error-tumpang-tindih.png` | Penolakan Reservasi yang Tumpang Tindih |
+| 5.8 | `08-pesanan-dari-reservasi.png` | Form Pesanan dari Reservasi (Pelanggan & Meja Otomatis) |
+| 5.9 | `09-pesanan-walkin.png` | Form Pesanan Tanpa Reservasi (Walk-in) |
+| 5.10 | `10-pesanan-detail.png` | Detail Pesanan |
+| 5.11 | `11-pesanan-selesai-reservasi-otomatis.png` | Pesanan Selesai dan Reservasi Otomatis Selesai |
+| 5.12 | `12-reservasi-selesai-otomatis.png` | Status Reservasi Setelah Pesanan Selesai |
+| 5.13 | `13-laporan.png` | Halaman Laporan |
+| 5.14 | `14-laporan-cetak.png` | Tampilan Cetak Laporan |
+| 5.15 | `15-ponsel-reservasi.png` | Tampilan Responsif di Layar Ponsel |
+
+  Bab VIII (Hasil Pengujian) memakai `16-unit-test.png` sebagai **Gambar 8.1 Hasil Unit Test** di samping tabel ringkasan.
 
 ### BAB VI — PENERAPAN PEMROGRAMAN TERSTRUKTUR, OOP, LIBRARY, DAN DATABASE (±3 halaman)
 
@@ -1409,6 +1431,7 @@ Laporan-LSP-Sistem-Pemesanan-Restoran/
 - [ ] BAB I–IX lengkap sesuai Bagian 6; BAB IV memuat 8 gambar diagram + tabel use case + tabel relasi + 6 tabel kamus data.
 - [ ] Nama tabel/kolom/tipe di kamus data **identik** dengan Bagian 4.1.
 - [ ] Hasil pengujian dan debugging **identik** dengan Bagian 7 (78 PASS/0 FAIL; E2E 90/90; rollback OK; 6 kasus debugging).
+- [ ] Bab V memuat tangkapan layar dari `docs/screenshots/` sesuai tabel Gambar 5.1–5.15, dan Bab VIII memuat `16-unit-test.png`.
 - [ ] Caption gambar di bawah, caption tabel di atas, penomoran berurutan per bab.
 - [ ] Format sesuai Bagian 8 (A4, margin 4-3-3-3, Times New Roman 12, spasi 1,5, nomor halaman).
 - [ ] Tidak ada fitur yang tidak ada di aplikasi (tidak ada login, pembayaran, API, ekspor PDF/Excel).

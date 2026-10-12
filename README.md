@@ -4,6 +4,10 @@ Aplikasi web sederhana untuk praktik demonstrasi **Sertifikasi LSP Programmer**.
 
 Spesifikasi lengkap ada di [`PRD-SPEC-LSP-Programmer-Sistem-Pemesanan-Restoran.md`](PRD-SPEC-LSP-Programmer-Sistem-Pemesanan-Restoran.md).
 
+![Dashboard Sistem Pemesanan Restoran](docs/screenshots/01-dashboard.png)
+
+Screenshot lainnya ada di [`docs/screenshots/`](docs/screenshots/).
+
 ## Fitur
 
 - **Dashboard**: total pelanggan, meja, reservasi, dan pesanan; reservasi hari ini, pesanan yang sedang diproses, dan pendapatan hari ini; tombol cepat Buat Reservasi / Buat Pesanan.
@@ -58,6 +62,7 @@ LSP-Programming/
 ├── docs/presentasi.md         # Outline slide presentasi
 ├── docs/PANDUAN-PEMBUATAN-DOCX.md  # Brief pembuatan laporan DOCX & diagram draw.io
 ├── docs/PANDUAN-PEMBUATAN-PPT.md   # Brief pembuatan presentasi PPTX
+├── docs/screenshots/           # Screenshot aplikasi + skrip capture.js
 ├── database.sql               # Skrip pembuatan database dan data contoh
 └── index.php                  # Titik masuk aplikasi (?page=...)
 ```
