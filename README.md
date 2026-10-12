@@ -43,6 +43,7 @@ LSP-Programming/
 ├── docs/laporan.md            # Laporan pengembangan
 ├── docs/presentasi.md         # Outline slide presentasi
 ├── docs/PANDUAN-PEMBUATAN-DOCX.md  # Brief pembuatan laporan DOCX & diagram draw.io
+├── docs/PANDUAN-PEMBUATAN-PPT.md   # Brief pembuatan presentasi PPTX
 ├── database.sql               # Skrip pembuatan database dan data contoh
 └── index.php                  # Titik masuk aplikasi (?page=...)
 ```
