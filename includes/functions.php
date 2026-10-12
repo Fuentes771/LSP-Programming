@@ -5,7 +5,28 @@
 const TABLE_STATUSES = ['Aktif', 'Nonaktif'];
 const RESERVATION_STATUSES = ['Menunggu', 'Dikonfirmasi', 'Selesai', 'Dibatalkan'];
 const ACTIVE_RESERVATION_STATUSES = ['Menunggu', 'Dikonfirmasi'];
+// Reservasi yang tamunya sudah datang, sehingga boleh dibuatkan pesanan
+const ORDERABLE_RESERVATION_STATUSES = ['Dikonfirmasi', 'Selesai'];
 const ORDER_STATUSES = ['Diproses', 'Selesai', 'Dibatalkan'];
+
+// Perubahan status yang diizinkan: status asal => daftar status tujuan
+const RESERVATION_TRANSITIONS = [
+    'Menunggu'     => ['Dikonfirmasi', 'Dibatalkan'],
+    'Dikonfirmasi' => ['Selesai', 'Dibatalkan'],
+    'Selesai'      => [],
+    'Dibatalkan'   => [],
+];
+const ORDER_TRANSITIONS = [
+    'Diproses'   => ['Selesai', 'Dibatalkan'],
+    'Selesai'    => [],
+    'Dibatalkan' => [],
+];
+
+// Aturan operasional restoran
+const OPENING_TIME = '10:00';
+const CLOSING_TIME = '22:00';
+const RESERVATION_DURATION_MINUTES = 120;
+const MAX_ORDER_QUANTITY = 100;
 
 // ---------------------------------------------------------------------------
 // Tampilan dan navigasi
@@ -43,12 +64,47 @@ function statusBadgeClass(string $status): string
         'Aktif'        => 'success',
         'Nonaktif'     => 'secondary',
         'Menunggu'     => 'warning',
-        'Dikonfirmasi' => 'primary',
+        'Dikonfirmasi' => 'info',
         'Diproses'     => 'warning',
         'Selesai'      => 'success',
         'Dibatalkan'   => 'danger',
     ];
     return $map[$status] ?? 'secondary';
+}
+
+/** Badge status lengkap dengan ikon. */
+function statusBadge(string $status): string
+{
+    $icons = [
+        'Aktif'        => 'bi-check-circle',
+        'Nonaktif'     => 'bi-slash-circle',
+        'Menunggu'     => 'bi-hourglass-split',
+        'Dikonfirmasi' => 'bi-check2-circle',
+        'Diproses'     => 'bi-fire',
+        'Selesai'      => 'bi-check-circle-fill',
+        'Dibatalkan'   => 'bi-x-circle',
+    ];
+    return '<span class="badge rounded-pill text-bg-' . statusBadgeClass($status) . '">'
+        . '<i class="bi ' . ($icons[$status] ?? 'bi-circle') . ' me-1"></i>' . e($status) . '</span>';
+}
+
+/** Judul halaman dengan ikon, keterangan singkat, dan tombol aksi utama di kanan. */
+function pageHeader(string $title, string $icon, string $subtitle = '', string $actionHtml = ''): string
+{
+    return '<div class="page-header d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">'
+        . '<div><h1 class="h3 mb-0"><i class="bi ' . e($icon) . ' text-primary me-2"></i>' . e($title) . '</h1>'
+        . ($subtitle !== '' ? '<p class="text-muted mb-0 small">' . e($subtitle) . '</p>' : '')
+        . '</div>'
+        . ($actionHtml !== '' ? '<div class="no-print">' . $actionHtml . '</div>' : '')
+        . '</div>';
+}
+
+/** Tampilan saat tabel tidak memiliki data. */
+function emptyState(string $text, string $actionHtml = ''): string
+{
+    return '<div class="empty-state text-center text-muted py-5">'
+        . '<i class="bi bi-inbox display-6 d-block mb-2"></i>'
+        . '<p class="mb-2">' . e($text) . '</p>' . $actionHtml . '</div>';
 }
 
 function setFlash(string $type, string $message): void
@@ -61,6 +117,12 @@ function getFlash(): ?array
     $flash = $_SESSION['flash'] ?? null;
     unset($_SESSION['flash']);
     return $flash;
+}
+
+/** Simpan hasil aksi sebagai pesan flash: daftar error (gagal) atau pesan sukses. */
+function flashResult(array $errors, string $successMessage): void
+{
+    $errors ? setFlash('danger', implode(' ', $errors)) : setFlash('success', $successMessage);
 }
 
 function redirect(string $url): void
@@ -81,27 +143,43 @@ function showErrors(array $errors): string
     if (empty($errors)) {
         return '';
     }
-    $html = '<div class="alert alert-danger"><strong>Data gagal disimpan:</strong><ul class="mb-0">';
+    $html = '<div class="alert alert-danger"><strong><i class="bi bi-exclamation-triangle me-1"></i>Data gagal disimpan:</strong><ul class="mb-0">';
     foreach ($errors as $error) {
         $html .= '<li>' . e($error) . '</li>';
     }
     return $html . '</ul></div>';
 }
 
-/** Tombol aksi kecil berbentuk form POST (hapus/batalkan) dengan konfirmasi. */
-function actionButton(string $action, int $id, string $label, string $btnClass, string $confirmMessage): string
+/**
+ * Tombol aksi kecil berbentuk form POST (hapus, batalkan, ubah status).
+ * $extra berisi field tersembunyi tambahan, misalnya ['status' => 'Selesai'].
+ */
+function actionButton(string $action, int $id, string $label, string $btnClass, string $confirmMessage = '', array $extra = [], string $icon = '', bool $iconOnly = false): string
 {
-    return '<form method="post" class="d-inline" onsubmit="return confirm(' . e(json_encode($confirmMessage)) . ');">'
+    $onsubmit = $confirmMessage !== '' ? ' onsubmit="return confirm(' . e(json_encode($confirmMessage)) . ');"' : '';
+    $html = '<form method="post" class="d-inline"' . $onsubmit . '>'
         . '<input type="hidden" name="action" value="' . e($action) . '">'
-        . '<input type="hidden" name="id" value="' . $id . '">'
-        . '<button type="submit" class="btn btn-sm ' . e($btnClass) . '">' . e($label) . '</button>'
-        . '</form>';
+        . '<input type="hidden" name="id" value="' . $id . '">';
+    foreach ($extra as $name => $value) {
+        $html .= '<input type="hidden" name="' . e($name) . '" value="' . e($value) . '">';
+    }
+    $iconHtml = $icon !== '' ? '<i class="bi ' . e($icon) . ($iconOnly ? '' : ' me-1') . '"></i>' : '';
+    $labelHtml = $iconOnly ? '<span class="visually-hidden">' . e($label) . '</span>' : e($label);
+    return $html . '<button type="submit" class="btn btn-sm ' . e($btnClass) . '" title="' . e($label) . '">'
+        . $iconHtml . $labelHtml . '</button></form>';
 }
 
 /** Ambil nilai input POST yang sudah di-trim. */
 function input(string $key, string $default = ''): string
 {
     $value = $_POST[$key] ?? $default;
+    return is_string($value) ? trim($value) : $default;
+}
+
+/** Ambil nilai query string (GET) yang sudah di-trim. */
+function query(string $key, string $default = ''): string
+{
+    $value = $_GET[$key] ?? $default;
     return is_string($value) ? trim($value) : $default;
 }
 
@@ -143,6 +221,13 @@ function normalizeTime(string $time): string
     return strlen($time) === 5 ? $time . ':00' : $time;
 }
 
+/** Ubah waktu HH:MM(:SS) menjadi jumlah menit sejak pukul 00:00. */
+function timeToMinutes(string $time): int
+{
+    [$hour, $minute] = explode(':', $time);
+    return (int) $hour * 60 + (int) $minute;
+}
+
 /** Bilangan bulat positif (> 0), misalnya kuantitas, kapasitas, jumlah tamu. */
 function isPositiveInteger($value): bool
 {
@@ -163,7 +248,7 @@ function validatePrice($price): bool
 
 function validateQuantity($quantity): bool
 {
-    return isPositiveInteger($quantity);
+    return isPositiveInteger($quantity) && (int) $quantity <= MAX_ORDER_QUANTITY;
 }
 
 function validateCapacity($capacity): bool
@@ -175,6 +260,12 @@ function validateCapacity($capacity): bool
 function validateGuestCount($guestCount, $capacity): bool
 {
     return isPositiveInteger($guestCount) && (int) $guestCount <= (int) $capacity;
+}
+
+/** Cek apakah perpindahan status diizinkan menurut tabel transisi. */
+function canChangeStatus(string $from, string $to, array $transitions): bool
+{
+    return in_array($to, $transitions[$from] ?? [], true);
 }
 
 // ---------------------------------------------------------------------------
@@ -221,7 +312,7 @@ function buildOrderItems(array $quantities, array $menus): array
         }
         $menu = $menus[$menuId];
         if (!validateQuantity($quantity)) {
-            $errors[] = 'Jumlah untuk menu "' . $menu['name'] . '" harus bilangan bulat lebih dari 0.';
+            $errors[] = 'Jumlah untuk menu "' . $menu['name'] . '" harus bilangan bulat 1–' . MAX_ORDER_QUANTITY . '.';
             continue;
         }
         $items[] = [
@@ -240,19 +331,54 @@ function buildOrderItems(array $quantities, array $menus): array
     return ['items' => $items, 'errors' => $errors];
 }
 
+/** Tanggal pesanan tanpa reservasi harus valid dan tidak boleh melebihi hari ini. */
+function validateOrderDate(string $date, string $today): array
+{
+    if (!isValidDate($date)) {
+        return ['Tanggal pesanan tidak valid.'];
+    }
+    if ($date > $today) {
+        return ['Tanggal pesanan tidak boleh melebihi hari ini.'];
+    }
+    return [];
+}
+
 // ---------------------------------------------------------------------------
 // Reservasi
 // ---------------------------------------------------------------------------
 
+/** Jam mulai reservasi terakhir agar selesai tepat saat restoran tutup (22:00 - 2 jam = 20:00). */
+function latestReservationStart(): string
+{
+    $minutes = timeToMinutes(CLOSING_TIME) - RESERVATION_DURATION_MINUTES;
+    return sprintf('%02d:%02d', intdiv($minutes, 60), $minutes % 60);
+}
+
+/** Reservasi harus dimulai setelah restoran buka dan selesai (mulai + durasi) sebelum tutup. */
+function isWithinOperatingHours(string $time): bool
+{
+    $start = timeToMinutes($time);
+    return $start >= timeToMinutes(OPENING_TIME)
+        && $start + RESERVATION_DURATION_MINUTES <= timeToMinutes(CLOSING_TIME);
+}
+
+/** True jika tanggal + jam sudah lewat dibandingkan waktu sekarang ($now disuntikkan agar mudah diuji). */
+function isPastDateTime(string $date, string $time, DateTimeInterface $now): bool
+{
+    $dateTime = DateTimeImmutable::createFromFormat('Y-m-d H:i:s', $date . ' ' . normalizeTime($time), $now->getTimezone());
+    return $dateTime !== false && $dateTime < $now;
+}
+
 /**
- * Cek apakah ada reservasi aktif lain pada meja, tanggal, dan waktu yang sama.
+ * Cek apakah ada reservasi aktif lain pada meja dan tanggal yang sama
+ * yang waktunya tumpang tindih (setiap reservasi memakai meja selama RESERVATION_DURATION_MINUTES).
  *
  * @param array    $existing  daftar reservasi (id, table_id, reservation_date, reservation_time, status)
  * @param int|null $excludeId id reservasi yang sedang diubah (diabaikan dari pengecekan)
  */
 function hasReservationConflict(array $existing, int $tableId, string $date, string $time, ?int $excludeId = null): bool
 {
-    $time = normalizeTime($time);
+    $start = timeToMinutes(normalizeTime($time));
 
     foreach ($existing as $reservation) {
         if ($excludeId !== null && (int) $reservation['id'] === $excludeId) {
@@ -261,8 +387,8 @@ function hasReservationConflict(array $existing, int $tableId, string $date, str
         if (
             (int) $reservation['table_id'] === $tableId
             && $reservation['reservation_date'] === $date
-            && normalizeTime($reservation['reservation_time']) === $time
             && in_array($reservation['status'], ACTIVE_RESERVATION_STATUSES, true)
+            && abs(timeToMinutes(normalizeTime($reservation['reservation_time'])) - $start) < RESERVATION_DURATION_MINUTES
         ) {
             return true;
         }
@@ -326,8 +452,12 @@ function validateMenuData(array $data): array
     return $errors;
 }
 
-/** Validasi format data reservasi (kapasitas dan bentrok dicek di class Reservation). */
-function validateReservationData(array $data): array
+/**
+ * Validasi data reservasi yang tidak membutuhkan database:
+ * format input, jam operasional, dan (jika $checkPast) tidak boleh di waktu yang sudah lewat.
+ * Kapasitas meja dan jadwal bentrok dicek di class Reservation.
+ */
+function validateReservationData(array $data, DateTimeInterface $now, bool $checkPast = true): array
 {
     $errors = [];
     if (!isPositiveInteger($data['customer_id'] ?? '')) {
@@ -336,17 +466,25 @@ function validateReservationData(array $data): array
     if (!isPositiveInteger($data['table_id'] ?? '')) {
         $errors[] = 'Meja wajib dipilih.';
     }
-    if (!isValidDate($data['reservation_date'] ?? '')) {
+    $date = $data['reservation_date'] ?? '';
+    $time = $data['reservation_time'] ?? '';
+    $validDate = isValidDate($date);
+    $validTime = isValidTime($time);
+    if (!$validDate) {
         $errors[] = 'Tanggal reservasi tidak valid.';
     }
-    if (!isValidTime($data['reservation_time'] ?? '')) {
+    if (!$validTime) {
         $errors[] = 'Waktu reservasi tidak valid.';
+    } elseif (!isWithinOperatingHours($time)) {
+        $errors[] = 'Waktu reservasi harus antara ' . OPENING_TIME . ' dan ' . latestReservationStart()
+            . ' (restoran buka ' . OPENING_TIME . '–' . CLOSING_TIME . ', durasi reservasi '
+            . (RESERVATION_DURATION_MINUTES / 60) . ' jam).';
+    }
+    if ($checkPast && $validDate && $validTime && isPastDateTime($date, $time, $now)) {
+        $errors[] = 'Tanggal dan waktu reservasi sudah lewat.';
     }
     if (!isPositiveInteger($data['guest_count'] ?? '')) {
         $errors[] = 'Jumlah tamu harus bilangan bulat lebih dari 0.';
-    }
-    if (!in_array($data['status'] ?? '', RESERVATION_STATUSES, true)) {
-        $errors[] = 'Status reservasi tidak valid.';
     }
     return $errors;
 }
