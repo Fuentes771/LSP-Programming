@@ -100,3 +100,24 @@ INSERT INTO menu_items (name, price, is_available) VALUES
     ('Ayam Bakar', 30000, 1),
     ('Es Teh Manis', 5000, 1),
     ('Jus Alpukat', 15000, 0);
+
+-- Reservasi & pesanan contoh (tanggal relatif terhadap hari ini agar demo langsung terisi)
+INSERT INTO reservations (customer_id, table_id, reservation_date, reservation_time, guest_count, status, notes) VALUES
+    (1, 2, CURDATE() - INTERVAL 1 DAY, '19:00:00', 3, 'Selesai', NULL),
+    (1, 2, CURDATE(), '12:00:00', 4, 'Dikonfirmasi', 'Makan siang kantor'),
+    (3, 3, CURDATE(), '19:00:00', 5, 'Menunggu', 'Ulang tahun'),
+    (2, 1, CURDATE() + INTERVAL 1 DAY, '18:30:00', 2, 'Menunggu', NULL);
+
+INSERT INTO restaurant_orders (customer_id, reservation_id, order_date, status, total_amount) VALUES
+    (1, 1, CURDATE() - INTERVAL 1 DAY, 'Selesai', 60000),
+    (1, 2, CURDATE(), 'Diproses', 95000),
+    (2, NULL, CURDATE(), 'Selesai', 25000);
+
+INSERT INTO order_items (order_id, menu_item_id, menu_name, price, quantity, subtotal) VALUES
+    (1, 1, 'Nasi Goreng Spesial', 25000, 2, 50000),
+    (1, 4, 'Es Teh Manis', 5000, 2, 10000),
+    (2, 3, 'Ayam Bakar', 30000, 2, 60000),
+    (2, 2, 'Mie Ayam Bakso', 20000, 1, 20000),
+    (2, 4, 'Es Teh Manis', 5000, 3, 15000),
+    (3, 2, 'Mie Ayam Bakso', 20000, 1, 20000),
+    (3, 4, 'Es Teh Manis', 5000, 1, 5000);

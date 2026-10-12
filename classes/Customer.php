@@ -6,9 +6,19 @@ class Customer extends BaseModel
 {
     protected string $table = 'customers';
 
-    public function all(): array
+    /** Daftar pelanggan beserta jumlah reservasi & pesanan, dapat dicari berdasarkan nama/telepon. */
+    public function all(string $search = ''): array
     {
-        return $this->db->query('SELECT * FROM customers ORDER BY name')->fetchAll();
+        $stmt = $this->db->prepare('
+            SELECT c.*,
+                   (SELECT COUNT(*) FROM reservations r WHERE r.customer_id = c.id) AS reservation_count,
+                   (SELECT COUNT(*) FROM restaurant_orders o WHERE o.customer_id = c.id) AS order_count
+            FROM customers c
+            WHERE c.name LIKE ? OR c.phone LIKE ?
+            ORDER BY c.name');
+        $keyword = '%' . $search . '%';
+        $stmt->execute([$keyword, $keyword]);
+        return $stmt->fetchAll();
     }
 
     /**

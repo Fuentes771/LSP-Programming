@@ -32,10 +32,10 @@ Aplikasi Web PHP Native & MySQL
 
 ## Slide 3 — Fitur Aplikasi
 
-- **Dashboard**: ringkasan jumlah data dan reservasi terbaru
+- **Dashboard**: ringkasan data, reservasi hari ini, pesanan diproses, pendapatan hari ini
 - **Pelanggan, Meja, Menu**: tambah, ubah, hapus (data berelasi dilindungi)
-- **Reservasi**: validasi kapasitas meja dan jadwal bentrok, bisa dibatalkan
-- **Pesanan**: beberapa menu per pesanan, subtotal dan total otomatis, harga terkunci saat pesanan dibuat
+- **Reservasi**: alur Menunggu → Dikonfirmasi → Selesai; jam buka 10:00–22:00, slot 2 jam, cek kapasitas & tumpang tindih
+- **Pesanan**: dibuat dari reservasi yang tamunya sudah datang, pratinjau total, harga terkunci saat pesanan dibuat
 - **Laporan**: filter rentang tanggal dan cetak lewat browser
 
 ---
@@ -89,29 +89,30 @@ abstract BaseModel  (PDO $db, count(), find())
 
 ## Slide 6 — Demo Aplikasi
 
-Skenario demo (± 5 menit):
+Skenario demo (± 5 menit), dengan data contoh hasil impor ulang `database.sql`:
 
-1. Dashboard: tunjukkan ringkasan data.
-2. Tambah pelanggan baru, lalu coba simpan dengan email yang salah (validasi server).
-3. Buat reservasi meja M02 (kapasitas 4) untuk 5 tamu → **ditolak**; ubah menjadi 4 tamu → berhasil.
-4. Buat reservasi lain di meja, tanggal, dan jam yang sama → **ditolak (bentrok)**.
-5. Buat pesanan 3 menu dan tunjukkan subtotal serta total otomatis.
-6. Coba hapus pelanggan yang punya pesanan → **ditolak** dengan pesan jelas.
-7. Buka laporan, filter tanggal, lalu klik **Cetak**.
+1. Dashboard: tunjukkan reservasi hari ini, pesanan diproses, dan pendapatan hari ini.
+2. Tambah pelanggan baru, lalu coba simpan dengan email yang salah → **ditolak** (validasi server).
+3. Buat Reservasi: isi 5 tamu → meja M01 dan M02 otomatis tidak bisa dipilih; pilih M03 besok pukul 19:00 → **berhasil** dengan status Menunggu.
+4. Buat reservasi lain di M03 besok pukul 20:00 → **ditolak** karena tumpang tindih dengan slot 19:00–21:00.
+5. Di daftar Hari Ini, klik **Konfirmasi** pada reservasi Andi Wijaya, lalu klik **Pesanan**: pelanggan, reservasi, dan tanggal terisi otomatis. Isi beberapa menu dan tunjukkan pratinjau total → Simpan.
+6. Di detail pesanan klik **Tandai Selesai** → status final. Coba **Batalkan** reservasi yang punya pesanan → **ditolak**.
+7. Coba hapus pelanggan yang punya pesanan → **ditolak** dengan pesan jelas.
+8. Buka Laporan → **Hari Ini** → klik **Cetak**.
 
 ---
 
 ## Slide 7 — Hasil Pengujian
 
 **Unit test**: `php tests/test_functions.php`
-- **41 PASS, 0 FAIL** (exit code 0)
-- Mencakup: subtotal/total pesanan, jumlah tamu vs kapasitas, harga/kuantitas tidak boleh ≤ 0, dan penolakan reservasi bentrok
+- **68 PASS, 0 FAIL** (exit code 0)
+- Mencakup: subtotal/total pesanan, jumlah tamu vs kapasitas, harga/kuantitas, reservasi bentrok (slot 2 jam), jam operasional & waktu lewat, serta alur status reservasi dan pesanan
 - Jika ada pengujian gagal, exit code menjadi 1 (sudah diverifikasi)
 
-**Uji end-to-end** (MariaDB + server PHP): **48 skenario OK**
+**Uji end-to-end** (MariaDB + server PHP): **61 dari 61 skenario OK**
 **Uji rollback transaksi**: pesanan gagal tidak tersimpan setengah
 
-**Debugging**: kesalahan metode redirect pada skrip uji, README berencoding UTF-16, dan antisipasi format waktu `HH:MM` vs `HH:MM:SS`
+**Debugging (5 kasus)**: metode redirect pada skrip uji, README berencoding UTF-16, format waktu `HH:MM` vs `HH:MM:SS`, test lama gagal setelah aturan slot 2 jam, dan halaman melebar di layar ponsel
 
 ---
 
@@ -119,6 +120,6 @@ Skenario demo (± 5 menit):
 
 - Semua fitur utama di PRD sudah berjalan dan teruji.
 - Kompetensi yang ditunjukkan: guidelines & best practices, pemrograman terstruktur, OOP, library Bootstrap, akses basis data (PDO dan transaksi), dokumentasi, debugging, dan unit test.
-- Pengembangan lanjutan: login dan hak akses, proteksi CSRF, pencarian dan paginasi.
+- Pengembangan lanjutan: login dan hak akses, proteksi CSRF, edit item pesanan, dan paginasi.
 
 **Terima kasih — Sesi tanya jawab**

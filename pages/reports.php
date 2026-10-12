@@ -18,25 +18,37 @@ $totalOrderValue = round(array_sum(array_map('floatval', array_column($validOrde
 
 $pageTitle = 'Laporan';
 require __DIR__ . '/../includes/header.php';
-?>
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <h1 class="h3 mb-0">Laporan Reservasi &amp; Pesanan</h1>
-    <button type="button" class="btn btn-outline-dark no-print" onclick="window.print()">Cetak Laporan</button>
-</div>
 
-<form method="get" class="card card-body shadow-sm mb-4 no-print">
+$today = date('Y-m-d');
+$periods = [
+    'Hari Ini'   => [$today, $today],
+    '7 Hari'     => [date('Y-m-d', strtotime('-6 days')), $today],
+    'Bulan Ini'  => [date('Y-m-01'), $today],
+    'Bulan Lalu' => [date('Y-m-01', strtotime('first day of last month')), date('Y-m-t', strtotime('last day of last month'))],
+];
+echo pageHeader('Laporan Reservasi & Pesanan', 'bi-bar-chart-line', 'Pilih periode lalu cetak melalui browser.',
+    '<button type="button" class="btn btn-outline-dark" onclick="window.print()"><i class="bi bi-printer me-1"></i>Cetak Laporan</button>');
+?>
+
+<form method="get" class="card card-body mb-4 no-print">
     <input type="hidden" name="page" value="reports">
     <div class="row g-3 align-items-end">
-        <div class="col-sm-5 col-md-4">
+        <div class="col-sm-6 col-md-3">
             <label for="start_date" class="form-label">Dari Tanggal</label>
             <input type="date" class="form-control" id="start_date" name="start_date" required value="<?= e($startDate) ?>">
         </div>
-        <div class="col-sm-5 col-md-4">
+        <div class="col-sm-6 col-md-3">
             <label for="end_date" class="form-label">Sampai Tanggal</label>
             <input type="date" class="form-control" id="end_date" name="end_date" required value="<?= e($endDate) ?>">
         </div>
-        <div class="col-sm-2 col-md-4">
-            <button type="submit" class="btn btn-primary">Tampilkan</button>
+        <div class="col-md-2">
+            <button type="submit" class="btn btn-primary w-100"><i class="bi bi-funnel me-1"></i>Tampilkan</button>
+        </div>
+        <div class="col-md-4 d-flex flex-wrap gap-1">
+            <?php foreach ($periods as $label => [$from, $to]): ?>
+                <a class="btn btn-sm <?= $startDate === $from && $endDate === $to ? 'btn-dark' : 'btn-outline-secondary' ?>"
+                   href="<?= e(pageUrl('reports', ['start_date' => $from, 'end_date' => $to])) ?>"><?= e($label) ?></a>
+            <?php endforeach; ?>
         </div>
     </div>
 </form>
@@ -47,32 +59,29 @@ require __DIR__ . '/../includes/header.php';
     <p class="text-muted">Periode: <strong><?= e(formatDate($startDate)) ?></strong> s.d. <strong><?= e(formatDate($endDate)) ?></strong></p>
 
     <div class="row g-3 mb-4">
-        <div class="col-md-4">
-            <div class="card stat-card shadow-sm h-100"><div class="card-body">
-                <div class="text-muted">Jumlah Reservasi</div>
-                <div class="display-6"><?= count($reservations) ?></div>
-            </div></div>
-        </div>
-        <div class="col-md-4">
-            <div class="card stat-card shadow-sm h-100"><div class="card-body">
-                <div class="text-muted">Jumlah Pesanan</div>
-                <div class="display-6"><?= count($orders) ?></div>
-            </div></div>
-        </div>
-        <div class="col-md-4">
-            <div class="card stat-card shadow-sm h-100"><div class="card-body">
-                <div class="text-muted">Total Nilai Pesanan</div>
-                <div class="display-6"><?= e(formatRupiah($totalOrderValue)) ?></div>
-                <div class="small text-muted">Tidak termasuk pesanan Dibatalkan</div>
-            </div></div>
-        </div>
+        <?php foreach ([
+            ['Jumlah Reservasi', (string) count($reservations), 'bi-calendar-check', ''],
+            ['Jumlah Pesanan', (string) count($orders), 'bi-receipt', ''],
+            ['Total Nilai Pesanan', formatRupiah($totalOrderValue), 'bi-cash-coin', 'Tidak termasuk pesanan Dibatalkan'],
+        ] as [$label, $value, $icon, $note]): ?>
+            <div class="col-md-4">
+                <div class="card stat-card h-100"><div class="card-body d-flex align-items-center gap-3">
+                    <div class="stat-icon bg-primary-subtle text-primary-emphasis"><i class="bi <?= e($icon) ?>"></i></div>
+                    <div>
+                        <div class="text-muted small"><?= e($label) ?></div>
+                        <div class="stat-value"><?= e($value) ?></div>
+                        <?php if ($note !== ''): ?><div class="small text-muted"><?= e($note) ?></div><?php endif; ?>
+                    </div>
+                </div></div>
+            </div>
+        <?php endforeach; ?>
     </div>
 
-    <div class="card shadow-sm mb-4">
-        <div class="card-header bg-white"><strong>Laporan Reservasi</strong></div>
+    <div class="card mb-4">
+        <div class="card-header"><i class="bi bi-calendar-check me-1"></i>Laporan Reservasi</div>
         <div class="table-responsive">
             <table class="table table-sm table-bordered mb-0">
-                <thead class="table-light">
+                <thead>
                 <tr>
                     <th>No</th>
                     <th>Tanggal</th>
@@ -95,7 +104,7 @@ require __DIR__ . '/../includes/header.php';
                         <td><?= e($reservation['customer_name']) ?></td>
                         <td><?= e($reservation['table_number']) ?></td>
                         <td class="text-center"><?= (int) $reservation['guest_count'] ?></td>
-                        <td><?= e($reservation['status']) ?></td>
+                        <td><?= statusBadge($reservation['status']) ?></td>
                     </tr>
                 <?php endforeach; ?>
                 </tbody>
@@ -103,11 +112,11 @@ require __DIR__ . '/../includes/header.php';
         </div>
     </div>
 
-    <div class="card shadow-sm">
-        <div class="card-header bg-white"><strong>Laporan Pesanan</strong></div>
+    <div class="card">
+        <div class="card-header"><i class="bi bi-receipt me-1"></i>Laporan Pesanan</div>
         <div class="table-responsive">
             <table class="table table-sm table-bordered mb-0">
-                <thead class="table-light">
+                <thead>
                 <tr>
                     <th>No</th>
                     <th>No. Pesanan</th>
@@ -127,7 +136,7 @@ require __DIR__ . '/../includes/header.php';
                         <td>#<?= (int) $order['id'] ?></td>
                         <td><?= e(formatDate($order['order_date'])) ?></td>
                         <td><?= e($order['customer_name']) ?></td>
-                        <td><?= e($order['status']) ?></td>
+                        <td><?= statusBadge($order['status']) ?></td>
                         <td class="text-end"><?= e(formatRupiah($order['total_amount'])) ?></td>
                     </tr>
                 <?php endforeach; ?>
