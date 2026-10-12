@@ -42,7 +42,7 @@
 5. **Speaker notes wajib** di setiap slide, berbahasa Indonesia, dari naskah Bagian 6.
 6. **Bahasa Indonesia** baku dan singkat. Istilah teknis boleh dalam bahasa Inggris.
 7. Semua teks harus **editable** (bukan gambar teks). Diagram/screenshot boleh berupa gambar.
-8. Jika gambar (diagram/screenshot) belum tersedia, gunakan **kotak placeholder** berbingkai putus-putus berlabel jelas, misalnya `[Gambar: Use Case Diagram]`, dengan ukuran dan posisi final, agar mudah diganti.
+8. Tangkapan layar aplikasi tersedia di `docs/screenshots/` (dilampirkan user, daftar di Bagian 5). Jika gambar (diagram/screenshot) belum tersedia, gunakan **kotak placeholder** berbingkai putus-putus berlabel jelas, misalnya `[Gambar: Use Case Diagram]`, dengan ukuran dan posisi final, agar mudah diganti.
 
 ---
 
@@ -376,11 +376,12 @@ LSP-Programming/
 
 | Aset | Dipakai di | Sumber | Jika belum ada |
 |---|---|---|---|
-| Screenshot Dashboard | Slide 1 (mockup), Slide 6 | Tangkapan layar aplikasi | Placeholder `[Screenshot: Dashboard]` |
-| Screenshot Daftar Reservasi (tombol Konfirmasi/Selesai/Pesanan) dan pesan tumpang tindih | Slide 6 | Tangkapan layar aplikasi | Placeholder `[Screenshot: Reservasi ditolak]` |
-| Screenshot Form Pesanan (pratinjau total) / Detail Pesanan | Slide 6 | Tangkapan layar aplikasi | Placeholder `[Screenshot: Form Pesanan]` |
-| Screenshot Laporan | Slide 6 | Tangkapan layar aplikasi | Placeholder `[Screenshot: Laporan]` |
-| Screenshot terminal unit test | Slide 7 (opsional) | Output `php tests/test_functions.php` | Kotak teks monospace berisi "Hasil: 78 PASS, 0 FAIL dari 78 pengujian." |
+| Screenshot Dashboard | Slide 1 (mockup), Slide 6 | `docs/screenshots/01-dashboard.png` | Placeholder `[Screenshot: Dashboard]` |
+| Screenshot Daftar Reservasi & pesan tumpang tindih | Slide 6 | `docs/screenshots/05-reservasi-daftar.png`, `07-reservasi-error-tumpang-tindih.png` | Placeholder `[Screenshot: Reservasi]` |
+| Screenshot Form Pesanan dari Reservasi (pelanggan & meja otomatis) | Slide 6 (gambar utama) | `docs/screenshots/08-pesanan-dari-reservasi.png` | Placeholder `[Screenshot: Form Pesanan]` |
+| Screenshot Pesanan selesai → reservasi otomatis selesai | Slide 6 | `docs/screenshots/11-pesanan-selesai-reservasi-otomatis.png` | Placeholder `[Screenshot: Pesanan Selesai]` |
+| Screenshot Laporan | Slide 6 | `docs/screenshots/13-laporan.png` | Placeholder `[Screenshot: Laporan]` |
+| Screenshot terminal unit test | Slide 7 (opsional) | `docs/screenshots/16-unit-test.png` (potong bagian akhir yang memuat "Hasil: 78 PASS, 0 FAIL") | Kotak teks monospace berisi "Hasil: 78 PASS, 0 FAIL dari 78 pengujian." |
 | `01-use-case.png` | Slide 3 (opsional), L1 | Dari panduan DOCX/draw.io | Placeholder `[Gambar: Use Case Diagram]` |
 | `08-erd.png` | Slide 4 | Dari panduan DOCX/draw.io | Gambar ulang 6 kotak tabel + garis relasi |
 | `02-activity-reservasi.png`, `07-flowchart-pesanan.png` | L2, L3 | Dari panduan DOCX/draw.io | Placeholder |
