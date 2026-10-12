@@ -16,7 +16,9 @@ class Reservation extends BaseModel
     private const SELECT_WITH_RELATIONS = '
         SELECT r.*, c.name AS customer_name, c.phone AS customer_phone, t.table_number, t.capacity,
                (SELECT COUNT(*) FROM restaurant_orders o
-                WHERE o.reservation_id = r.id AND o.status <> \'Dibatalkan\') AS order_count
+                WHERE o.reservation_id = r.id AND o.status <> \'Dibatalkan\') AS order_count,
+               (SELECT COUNT(*) FROM restaurant_orders o
+                WHERE o.reservation_id = r.id AND o.status = \'Diproses\') AS open_order_count
         FROM reservations r
         JOIN customers c ON c.id = r.customer_id
         JOIN restaurant_tables t ON t.id = r.table_id';
@@ -79,16 +81,16 @@ class Reservation extends BaseModel
     }
 
     /**
-     * Reservasi yang boleh dibuatkan pesanan: tamu sudah datang (Dikonfirmasi/Selesai)
+     * Reservasi yang boleh dibuatkan pesanan: sudah Dikonfirmasi (tamu datang)
      * dan tanggalnya dalam 30 hari terakhir sampai hari ini.
      */
     public function forOrder(): array
     {
         $stmt = $this->db->prepare(self::SELECT_WITH_RELATIONS . '
-            WHERE r.status IN (?, ?) AND r.reservation_date BETWEEN ? AND ?
+            WHERE r.status = ? AND r.reservation_date BETWEEN ? AND ?
             ORDER BY r.reservation_date DESC, r.reservation_time DESC');
         $stmt->execute([
-            ...ORDERABLE_RESERVATION_STATUSES,
+            'Dikonfirmasi',
             $this->now->modify('-30 days')->format('Y-m-d'),
             $this->today(),
         ]);
@@ -109,6 +111,14 @@ class Reservation extends BaseModel
     {
         $stmt = $this->db->prepare('SELECT COUNT(*) FROM restaurant_orders WHERE reservation_id = ? AND status <> ?');
         $stmt->execute([$id, 'Dibatalkan']);
+        return (int) $stmt->fetchColumn();
+    }
+
+    /** Jumlah pesanan yang masih Diproses untuk reservasi ini. */
+    private function countOpenOrders(int $id): int
+    {
+        $stmt = $this->db->prepare('SELECT COUNT(*) FROM restaurant_orders WHERE reservation_id = ? AND status = ?');
+        $stmt->execute([$id, 'Diproses']);
         return (int) $stmt->fetchColumn();
     }
 
@@ -161,8 +171,14 @@ class Reservation extends BaseModel
         if ($customerStmt->fetch() === false) {
             return ['Pelanggan yang dipilih tidak ditemukan.'];
         }
-        if ($existing !== null && (int) $existing['customer_id'] !== (int) $data['customer_id'] && $this->countActiveOrders($id) > 0) {
-            return ['Pelanggan tidak dapat diganti karena reservasi ini sudah memiliki pesanan.'];
+        if ($existing !== null && $this->countActiveOrders($id) > 0) {
+            // Pesanan mengikuti pelanggan dan tanggal reservasi, jadi keduanya dikunci setelah ada pesanan
+            if ((int) $existing['customer_id'] !== (int) $data['customer_id']) {
+                return ['Pelanggan tidak dapat diganti karena reservasi ini sudah memiliki pesanan.'];
+            }
+            if ($existing['reservation_date'] !== $data['reservation_date']) {
+                return ['Tanggal tidak dapat diubah karena reservasi ini sudah memiliki pesanan.'];
+            }
         }
 
         $tableId = (int) $data['table_id'];
@@ -228,8 +244,14 @@ class Reservation extends BaseModel
         if (!canChangeStatus($reservation['status'], $status, RESERVATION_TRANSITIONS)) {
             return ['Status reservasi tidak dapat diubah dari ' . $reservation['status'] . ' menjadi ' . $status . '.'];
         }
+        if ($status === 'Dikonfirmasi' && $reservation['reservation_date'] < $this->today()) {
+            return ['Reservasi yang tanggalnya sudah lewat tidak dapat dikonfirmasi. Batalkan reservasi tersebut.'];
+        }
         if ($status === 'Selesai' && $reservation['reservation_date'] > $this->today()) {
             return ['Reservasi belum dapat diselesaikan sebelum tanggal reservasinya.'];
+        }
+        if ($status === 'Selesai' && $this->countOpenOrders($id) > 0) {
+            return ['Reservasi belum dapat diselesaikan karena masih ada pesanan yang Diproses. Selesaikan pesanannya; reservasi akan ikut selesai otomatis.'];
         }
         if ($status === 'Dibatalkan' && $this->countActiveOrders($id) > 0) {
             return ['Reservasi tidak dapat dibatalkan karena sudah memiliki pesanan. Batalkan pesanannya terlebih dahulu.'];
