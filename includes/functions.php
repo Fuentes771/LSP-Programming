@@ -5,8 +5,8 @@
 const TABLE_STATUSES = ['Aktif', 'Nonaktif'];
 const RESERVATION_STATUSES = ['Menunggu', 'Dikonfirmasi', 'Selesai', 'Dibatalkan'];
 const ACTIVE_RESERVATION_STATUSES = ['Menunggu', 'Dikonfirmasi'];
-// Reservasi yang tamunya sudah datang, sehingga boleh dibuatkan pesanan
-const ORDERABLE_RESERVATION_STATUSES = ['Dikonfirmasi', 'Selesai'];
+// Reservasi yang sudah dikonfirmasi (tamu datang) sehingga boleh dibuatkan pesanan
+const ORDERABLE_RESERVATION_STATUSES = ['Dikonfirmasi'];
 const ORDER_STATUSES = ['Diproses', 'Selesai', 'Dibatalkan'];
 
 // Perubahan status yang diizinkan: status asal => daftar status tujuan
@@ -329,6 +329,31 @@ function buildOrderItems(array $quantities, array $menus): array
     }
 
     return ['items' => $items, 'errors' => $errors];
+}
+
+/**
+ * Cek apakah reservasi boleh dibuatkan pesanan: harus sudah Dikonfirmasi
+ * dan tanggalnya sudah tiba (bukan reservasi untuk hari-hari berikutnya).
+ */
+function validateReservationForOrder(array $reservation, string $today): array
+{
+    if (!in_array($reservation['status'], ORDERABLE_RESERVATION_STATUSES, true)) {
+        return ['Pesanan hanya dapat dibuat untuk reservasi yang sudah Dikonfirmasi (status saat ini: '
+            . $reservation['status'] . '). Konfirmasi reservasinya terlebih dahulu.'];
+    }
+    if ($reservation['reservation_date'] > $today) {
+        return ['Pesanan untuk reservasi baru dapat dibuat pada tanggal reservasinya.'];
+    }
+    return [];
+}
+
+/**
+ * Reservasi otomatis diselesaikan ketika pesanannya selesai, asalkan reservasi masih Dikonfirmasi
+ * dan tidak ada pesanan lain untuk reservasi tersebut yang masih Diproses.
+ */
+function shouldCompleteReservation(string $reservationStatus, int $openOrderCount): bool
+{
+    return $reservationStatus === 'Dikonfirmasi' && $openOrderCount === 0;
 }
 
 /** Tanggal pesanan tanpa reservasi harus valid dan tidak boleh melebihi hari ini. */

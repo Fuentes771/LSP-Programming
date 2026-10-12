@@ -99,7 +99,7 @@ Yang **tidak** dipakai (sesuai batasan spesifikasi): Laravel, React, Docker, RES
 | F3 | Data Meja | Lihat, **cari**, tambah, ubah, hapus. Data: nomor meja (unik), kapasitas, status **Aktif/Nonaktif**. Tabel menampilkan jumlah reservasi aktif mendatang. |
 | F4 | Data Menu | Lihat, **cari**, tambah, ubah, hapus. Data: nama menu, harga, status **Tersedia/Tidak Tersedia**. |
 | F5 | Reservasi Meja | Halaman **daftar** (filter **Hari Ini / Akan Datang / Semua** + filter status, tombol aksi sesuai status) dan halaman **form** terpisah untuk buat/ubah. Data: pelanggan, jumlah tamu, meja, tanggal, jam mulai, catatan (opsional). Status diubah lewat tombol **Konfirmasi**, **Selesai**, **Batalkan**. |
-| F6 | Pesanan | Buat pesanan untuk pelanggan (reservasi opsional), pilih menu dengan tombol −/+ dan lihat **pratinjau subtotal & total**. Bisa dibuka langsung dari tombol **Pesanan** di daftar reservasi. Daftar dengan filter status, halaman detail dengan tombol **Tandai Selesai**/**Batalkan Pesanan** dan **Cetak**. |
+| F6 | Pesanan | Dua jenis: **Dari reservasi** (pilih reservasi Dikonfirmasi; pelanggan, meja, jadwal, dan tamu otomatis tampil, tinggal pilih menu) atau **Tanpa reservasi/walk-in** (pelanggan terdaftar/baru + tanggal). Menu dipilih dengan tombol −/+ dan ada **pratinjau subtotal & total**. Bisa dibuka langsung dari tombol **Pesanan** di daftar reservasi. Pesanan terakhir yang diselesaikan otomatis menyelesaikan reservasinya. Daftar dengan filter status, halaman detail dengan tombol **Tandai Selesai**/**Batalkan Pesanan** dan **Cetak**. |
 | F7 | Laporan | Laporan reservasi dan pesanan berdasarkan rentang tanggal (pintasan Hari Ini, 7 Hari, Bulan Ini, Bulan Lalu), ringkasan jumlah & total nilai, tombol **Cetak** (fitur cetak browser). |
 
 ### 2.2 Status dan Alur Status
@@ -122,7 +122,15 @@ Pesanan:    Diproses ──► Selesai
                 └──────► Dibatalkan                   (Selesai & Dibatalkan = final)
 ```
 
-Makna status reservasi: **Menunggu** = baru dicatat; **Dikonfirmasi** = reservasi dipastikan/tamu datang; **Selesai** = tamu sudah selesai; **Dibatalkan** = batal. Alur disimpan sebagai konstanta `RESERVATION_TRANSITIONS` dan `ORDER_TRANSITIONS`, lalu diperiksa dengan fungsi `canChangeStatus()`.
+Makna status reservasi: **Menunggu** = baru dicatat; **Dikonfirmasi** = reservasi dipastikan/tamu datang (baru boleh dibuatkan pesanan); **Selesai** = tamu sudah selesai (otomatis saat pesanan terakhirnya selesai, atau manual jika tidak ada pesanan yang masih Diproses); **Dibatalkan** = batal.
+
+**Keterkaitan reservasi ↔ pesanan:**
+
+```text
+Reservasi Menunggu ──Konfirmasi──► Dikonfirmasi ──Buat pesanan (pilih reservasi)──► Pesanan Diproses
+                                                                                     │ Tandai Selesai
+Reservasi Selesai ◄──otomatis jika tidak ada pesanan lain yang Diproses──────────── Pesanan Selesai
+``` Alur disimpan sebagai konstanta `RESERVATION_TRANSITIONS` dan `ORDER_TRANSITIONS`, lalu diperiksa dengan fungsi `canChangeStatus()`.
 
 Warna badge status di UI (dengan ikon): Aktif/Selesai = hijau, Menunggu/Diproses = kuning, Dikonfirmasi = biru muda, Dibatalkan = merah, Nonaktif = abu-abu.
 
@@ -180,20 +188,18 @@ Zona waktu aplikasi: **Asia/Jakarta** (untuk menentukan "hari ini" dan jam yang 
 
 **Mengubah status reservasi** (`Reservation::changeStatus()`)
 - Harus sesuai alur di Bagian 2.2, jika tidak: *"Status reservasi tidak dapat diubah dari Menunggu menjadi Selesai."*
+- **Dikonfirmasi** tidak boleh untuk reservasi yang tanggalnya sudah lewat: *"Reservasi yang tanggalnya sudah lewat tidak dapat dikonfirmasi. Batalkan reservasi tersebut."* Di daftar, reservasi aktif bertanggal lewat diberi tanda *"Tanggal sudah lewat"*.
 - **Selesai** tidak boleh sebelum tanggal reservasi: *"Reservasi belum dapat diselesaikan sebelum tanggal reservasinya."*
+- **Selesai** manual ditolak selama masih ada pesanan Diproses: *"Reservasi belum dapat diselesaikan karena masih ada pesanan yang Diproses. Selesaikan pesanannya; reservasi akan ikut selesai otomatis."*
 - **Dibatalkan** ditolak jika reservasi sudah punya pesanan (selain yang Dibatalkan): *"Reservasi tidak dapat dibatalkan karena sudah memiliki pesanan. Batalkan pesanannya terlebih dahulu."*
 - Data reservasi tidak pernah dihapus. Slot meja dari reservasi yang dibatalkan dapat dipakai lagi.
-- Tombol di daftar mengikuti status: Menunggu → **Konfirmasi**, **Ubah**, **Batalkan**; Dikonfirmasi → **Selesai** (jika tanggalnya sudah tiba), **Pesanan**, **Ubah**, **Batalkan**; Selesai → **Pesanan** (jika dalam 30 hari terakhir); Dibatalkan → tanpa tombol.
+- Setelah reservasi punya pesanan, **pelanggan dan tanggal** reservasi dikunci (*"Tanggal tidak dapat diubah karena reservasi ini sudah memiliki pesanan."*).
+- Tombol di daftar mengikuti status: Menunggu → **Konfirmasi** (jika tanggal belum lewat), **Ubah**, **Batalkan**; Dikonfirmasi → **Pesanan** (jika tanggalnya sudah tiba), **Selesai** (jika tanggal sudah tiba dan tidak ada pesanan Diproses; jika ada, tampil keterangan *"Selesai otomatis saat pesanan selesai"*), **Ubah**, **Batalkan** (hanya jika belum ada pesanan); Selesai/Dibatalkan → tanpa tombol.
 
 **Pesanan** (`Order::create()`)
-1. Pelanggan wajib dipilih dan harus ada.
-2. Reservasi **opsional**. Jika dipilih, harus:
-   - ada dan **milik pelanggan yang sama**;
-   - berstatus **Dikonfirmasi atau Selesai** (tamu sudah datang): *"Pesanan hanya dapat dibuat untuk reservasi yang sudah Dikonfirmasi atau Selesai (status saat ini: Menunggu)."*;
-   - tanggalnya **sudah tiba** (bukan reservasi masa depan): *"Pesanan untuk reservasi baru dapat dibuat pada tanggal reservasinya."*
-
-   Jika valid, **tanggal pesanan otomatis = tanggal reservasi** (nilai tanggal dari form diabaikan).
-3. Tanpa reservasi: tanggal pesanan valid dan **tidak boleh melebihi hari ini**.
+1. Form diawali pilihan **jenis pesanan**: **Dari reservasi** (default jika ada reservasi yang siap) atau **Tanpa reservasi (walk-in)**.
+2. **Dari reservasi**: wajib memilih reservasi. Reservasi harus ada, berstatus **Dikonfirmasi** (*"Pesanan hanya dapat dibuat untuk reservasi yang sudah Dikonfirmasi (status saat ini: Menunggu). Konfirmasi reservasinya terlebih dahulu."*), dan tanggalnya **sudah tiba** (*"Pesanan untuk reservasi baru dapat dibuat pada tanggal reservasinya."*). **Pelanggan dan tanggal pesanan diambil dari reservasi**; data pelanggan/tanggal yang dikirim form diabaikan. Meja ditampilkan dari reservasi.
+3. **Tanpa reservasi (walk-in)**: pelanggan terdaftar wajib dipilih (atau tambah pelanggan baru), tanggal pesanan valid dan **tidak boleh melebihi hari ini**.
 4. Item dibangun dari input jumlah per menu (`buildOrderItems()`):
    - jumlah kosong atau `0` berarti menu tidak dipesan,
    - jumlah harus bilangan bulat **1–100**,
@@ -204,9 +210,9 @@ Zona waktu aplikasi: **Asia/Jakarta** (untuk menentukan "hari ini" dan jam yang 
 7. Penyimpanan dalam **satu transaksi**: `BEGIN` → INSERT `restaurant_orders` → INSERT setiap `order_items` → `COMMIT`. Jika terjadi error: `ROLLBACK`, pengguna melihat *"Pesanan gagal disimpan. Silakan coba lagi."*, dan detail error hanya dicatat ke log server.
 8. Setelah tersimpan, pengguna diarahkan ke halaman **Detail Pesanan**.
 
-**Bantuan di browser (form pesanan):** dropdown reservasi hanya menampilkan reservasi milik pelanggan yang dipilih (Dikonfirmasi/Selesai, 30 hari terakhir s.d. hari ini); memilih reservasi otomatis memilih pelanggannya dan mengunci tanggal; tombol −/+ per menu; pratinjau subtotal per baris, jumlah item, dan total (keterangan: total final dihitung ulang oleh server).
+**Bantuan di browser (form pesanan):** tombol jenis pesanan menampilkan bagian yang sesuai dan menonaktifkan bagian lain (`fieldset disabled`, sehingga isiannya tidak divalidasi/terkirim); dropdown reservasi berisi reservasi **Dikonfirmasi** 30 hari terakhir s.d. hari ini dengan teks "Nama · Meja · Tanggal Jam"; memilih reservasi langsung menampilkan kartu info **Pelanggan, Meja, Jadwal, Tamu**; tombol −/+ per menu; pratinjau subtotal per baris, jumlah item, dan total (total final dihitung ulang oleh server). Jika belum ada reservasi Dikonfirmasi, tampil peringatan dengan tautan ke halaman Reservasi.
 
-**Mengubah status pesanan** (`Order::updateStatus()`): hanya **Diproses → Selesai** atau **Diproses → Dibatalkan**. Pesanan Selesai/Dibatalkan bersifat final; halaman detail tidak lagi menampilkan tombol ubah status (diganti keterangan "sudah final").
+**Mengubah status pesanan** (`Order::updateStatus()`): hanya **Diproses → Selesai** atau **Diproses → Dibatalkan**. Pesanan Selesai/Dibatalkan bersifat final; halaman detail tidak lagi menampilkan tombol ubah status (diganti keterangan "sudah final"). Jika pesanan yang terkait reservasi ditandai **Selesai** dan tidak ada pesanan lain untuk reservasi itu yang masih Diproses, reservasi **otomatis ikut Selesai** dalam transaksi yang sama (*"Pesanan ditandai selesai. Reservasi terkait otomatis ditandai selesai."*). Membatalkan pesanan tidak mengubah status reservasi.
 
 **Laporan**
 - Input: tanggal awal & akhir (default: tanggal 1 bulan berjalan s.d. hari ini), plus pintasan Hari Ini, 7 Hari, Bulan Ini, Bulan Lalu.
@@ -315,8 +321,8 @@ Alur sebuah halaman: (1) jika request POST, proses aksi → validasi → panggil
 | `Customer` | `customers` | `all($search)`, `findByPhone()`, `save()`, `runWithCustomer()`, `delete()` | CRUD + pencarian pelanggan, telepon unik, pembuatan pelanggan baru bersama reservasi/pesanan dalam satu transaksi, cek relasi sebelum hapus |
 | `RestaurantTable` | `restaurant_tables` | `all($search)`, `active()`, `save()`, `delete()` | CRUD meja, nomor unik, larang nonaktif jika ada reservasi mendatang |
 | `MenuItem` | `menu_items` | `all($search)`, `available()`, `save()`, `delete()` | CRUD menu, daftar menu tersedia |
-| `Reservation` | `reservations` | `all($scope, $status)`, `findWithRelations()`, `countOn()`, `forOrder()`, `between()`, `create()`, `update()`, `changeStatus()` | Aturan jam operasional, waktu lewat, kapasitas, tumpang tindih 2 jam, alur status, laporan |
-| `Order` | `restaurant_orders`, `order_items` | `all($status)`, `between()`, `countByStatus()`, `revenueOn()`, `findWithItems()`, `create()`, `updateStatus()` | Validasi reservasi pesanan, simpan pesanan + item dalam transaksi, alur status, laporan |
+| `Reservation` | `reservations` | `all($scope, $status)`, `findWithRelations()`, `countOn()`, `forOrder()`, `between()`, `create()`, `update()`, `changeStatus()` | Aturan jam operasional, waktu lewat, kapasitas, tumpang tindih 2 jam, alur status, kunci pelanggan/tanggal setelah ada pesanan, laporan |
+| `Order` | `restaurant_orders`, `order_items` | `all($status)`, `between()`, `countByStatus()`, `revenueOn()`, `findWithItems()`, `create()`, `updateStatus()` | Pelanggan/tanggal dari reservasi, simpan pesanan + item dalam transaksi, alur status, penyelesaian otomatis reservasi, laporan |
 
 Konsep OOP yang ditunjukkan: **abstraksi** (class abstrak), **pewarisan** (`extends BaseModel`), **enkapsulasi** (property `protected`; property `$now` dan method `private` seperti `persist()`, `onTableAndDate()`, `countActiveOrders()`), dan ***dependency injection*** (PDO lewat constructor; `Reservation`/`Order` bisa menerima waktu "sekarang" lewat constructor; `Order::create()` menerima objek `MenuItem`).
 
@@ -328,7 +334,7 @@ Konsep OOP yang ditunjukkan: **abstraksi** (class abstrak), **pewarisan** (`exte
 | Perhitungan | `calculateSubtotal($price, $qty)`, `calculateOrderTotal($items)`, `buildOrderItems($quantities, $menus)` |
 | Validasi dasar | `isRequired()`, `isValidEmail()`, `isValidPhone()`, `isValidDate()`, `isValidTime()`, `normalizeTime()`, `timeToMinutes()`, `isPositiveInteger()`, `validatePrice()`, `validateQuantity()`, `validateCapacity()`, `validateGuestCount()`, `validateOrderDate()` |
 | Aturan waktu reservasi | `latestReservationStart()`, `isWithinOperatingHours($time)`, `isPastDateTime($date, $time, $now)` |
-| Aturan bisnis | `hasReservationConflict($existing, $tableId, $date, $time, $excludeId)`, `canChangeStatus($from, $to, $transitions)` |
+| Aturan bisnis | `hasReservationConflict($existing, $tableId, $date, $time, $excludeId)`, `canChangeStatus($from, $to, $transitions)`, `validateReservationForOrder($reservation, $today)`, `shouldCompleteReservation($reservationStatus, $openOrderCount)` |
 | Validasi entitas | `validateCustomerData()`, `validateTableData()`, `validateMenuData()`, `validateReservationData($data, $now, $checkPast)`, `validateDateRange()` (mengembalikan daftar pesan error) |
 | Helper tampilan | `e()`, `formatRupiah()`, `formatDate()`, `formatTime()`, `statusBadgeClass()`, `statusBadge()`, `pageHeader()`, `emptyState()`, `setFlash()`, `getFlash()`, `flashResult()`, `redirect()`, `pageUrl()`, `showErrors()`, `actionButton()`, `input()`, `query()` |
 
@@ -627,10 +633,10 @@ flowchart LR
 | UC-04 | Mengelola Data Menu | Menambah, mengubah, menghapus, dan melihat menu beserta harga & ketersediaan. | Data tersimpan; harga > 0. |
 | UC-05 | Mengelola Reservasi | Membuat (status awal Menunggu; pelanggan dipilih atau langsung ditambahkan), melihat dengan filter, dan mengubah reservasi aktif. | Reservasi tersimpan jika lolos validasi. |
 | UC-06 | Memvalidasi Jadwal & Kapasitas | Sistem memeriksa jam operasional, waktu belum lewat, meja aktif, jumlah tamu ≤ kapasitas, dan tidak tumpang tindih (slot 2 jam). | Lolos atau pesan error. |
-| UC-07 | Mengubah Status Reservasi | Mengonfirmasi, menyelesaikan, atau membatalkan reservasi sesuai alur status. | Status berubah; pembatalan ditolak jika sudah ada pesanan. |
-| UC-08 | Membuat Pesanan | Memilih pelanggan (atau menambah pelanggan baru), reservasi (opsional, tamu sudah datang), menu, dan jumlah. | Pesanan + item tersimpan dalam transaksi. |
+| UC-07 | Mengubah Status Reservasi | Mengonfirmasi (tanggal belum lewat), menyelesaikan, atau membatalkan reservasi sesuai alur status. | Status berubah; pembatalan ditolak jika sudah ada pesanan; Selesai manual ditolak jika ada pesanan Diproses. |
+| UC-08 | Membuat Pesanan | Memilih reservasi Dikonfirmasi (pelanggan & meja otomatis) atau walk-in (pelanggan terdaftar/baru), lalu memilih menu dan jumlah. | Pesanan + item tersimpan dalam transaksi. |
 | UC-09 | Menghitung Subtotal & Total | Sistem menghitung subtotal per item dan total dari harga database. | Total tersimpan di pesanan. |
-| UC-10 | Mengubah Status Pesanan | Menandai pesanan Diproses menjadi Selesai atau Dibatalkan pada halaman detail. | Status final. |
+| UC-10 | Mengubah Status Pesanan | Menandai pesanan Diproses menjadi Selesai atau Dibatalkan pada halaman detail. | Status final; reservasi ikut Selesai otomatis bila pesanan terakhirnya selesai. |
 | UC-11 | Melihat Laporan | Memilih rentang tanggal untuk laporan reservasi & pesanan. | Laporan dan ringkasan tampil. |
 | UC-12 | Mencetak Laporan | Mencetak laporan lewat fitur cetak browser. | Dokumen tercetak tanpa navbar/form. |
 
@@ -654,10 +660,10 @@ Semua activity diagram memakai **2 swimlane**: **Petugas** (kiri) dan **Sistem**
 | 8 | Sistem | ◇ Ada reservasi aktif lain di meja & tanggal sama dengan selisih < 2 jam? **Ya** → ke langkah 10 |
 | 9 | Sistem | (Jika pelanggan baru: menyimpan pelanggan baru dalam transaksi yang sama) → menyimpan reservasi dengan status **Menunggu** → pesan berhasil → menampilkan daftar → ke langkah 11. Jika langkah 6–8 gagal, pelanggan baru tidak tersimpan. |
 | 10 | Sistem | Menampilkan **pesan error**, form tetap terisi → kembali ke langkah 5 |
-| 11 | Petugas | Saat tamu datang/reservasi dipastikan: klik **Konfirmasi** |
+| 11 | Petugas | Saat tamu datang/reservasi dipastikan: klik **Konfirmasi** (tidak tersedia jika tanggal sudah lewat) |
 | 12 | Sistem | ◇ Perpindahan status sesuai alur? **Ya** → status **Dikonfirmasi** |
-| 13 | Petugas | Setelah tamu selesai: klik **Selesai** |
-| 14 | Sistem | ◇ Tanggal reservasi sudah tiba? **Ya** → status **Selesai** → ◉ Selesai; **Tidak** → pesan error |
+| 13 | Petugas | Membuat pesanan dari reservasi (Activity 5.2.2). Reservasi otomatis **Selesai** saat pesanan terakhirnya selesai. Jika tamu tidak memesan, petugas klik **Selesai** manual |
+| 14 | Sistem | ◇ Tanggal sudah tiba **dan** tidak ada pesanan Diproses? **Ya** → status **Selesai** → ◉ Selesai; **Tidak** → pesan error |
 
 Cabang alternatif (boleh digambar sebagai keputusan dari langkah 11/13): Petugas klik **Batalkan** → Sistem ◇ reservasi sudah punya pesanan? **Ya** → pesan "Batalkan pesanannya terlebih dahulu"; **Tidak** → status **Dibatalkan** → ◉ Selesai.
 
@@ -683,41 +689,46 @@ flowchart TD
     d4 -- Ya --> s3[Sistem: Status Selesai] --> stop
 ```
 
-#### 5.2.2 Membuat Pesanan — `03-activity-pesanan.drawio`
+#### 5.2.2 Membuat Pesanan dan Menyelesaikannya — `03-activity-pesanan.drawio`
 
 | No | Lajur | Aktivitas |
 |---|---|---|
-| 1 | Petugas | ● Mulai → klik **Pesanan** pada reservasi Dikonfirmasi di daftar Reservasi (atau **Buat Pesanan** di halaman Pesanan) |
-| 2 | Sistem | Menampilkan form; jika dari reservasi: pelanggan, reservasi, dan tanggal **terisi otomatis** dan tanggal terkunci |
-| 3 | Petugas | (Jika dari halaman Pesanan) memilih pelanggan terdaftar → Sistem hanya menampilkan reservasi milik pelanggan itu; **atau** memilih Pelanggan baru (tamu walk-in) dan mengisi nama & telepon → pilihan reservasi dinonaktifkan |
-| 4 | Petugas | Mengisi jumlah menu dengan tombol −/+ |
-| 5 | Sistem | Menampilkan **pratinjau** subtotal per menu, jumlah item, dan total |
-| 6 | Petugas | Klik **Simpan Pesanan** |
-| 7 | Sistem | Memvalidasi pelanggan; jika ada reservasi: milik pelanggan, status Dikonfirmasi/Selesai, tanggalnya sudah tiba → tanggal pesanan = tanggal reservasi; tanpa reservasi: tanggal ≤ hari ini |
-| 8 | Sistem | Menyusun item dengan **harga dari database**, jumlah 1–100, menu tersedia |
-| 9 | Sistem | ◇ Data valid & minimal 1 item? **Tidak** → pesan error → kembali ke langkah 4 |
-| 10 | Sistem | Menghitung subtotal & total → **BEGIN** → simpan pesanan (Diproses) → simpan semua item |
-| 11 | Sistem | ◇ Berhasil? **Tidak** → **ROLLBACK** → pesan "Pesanan gagal disimpan" → kembali ke langkah 6; **Ya** → **COMMIT** |
-| 12 | Sistem | Menampilkan **Detail Pesanan** (meja & jam reservasi, item, total) |
-| 13 | Petugas | Setelah pesanan selesai disajikan & dibayar: klik **Tandai Selesai** (atau **Batalkan Pesanan**) |
-| 14 | Sistem | Mengubah status → status final, tombol ubah status hilang → ◉ Selesai |
+| 1 | Petugas | ● Mulai → klik **Pesanan** pada reservasi Dikonfirmasi di daftar Reservasi, atau **Buat Pesanan** di halaman Pesanan |
+| 2 | Sistem | Menampilkan form dengan pilihan jenis pesanan |
+| 3 | Petugas | ◇ Jenis pesanan? **Dari reservasi** → langkah 4; **Tanpa reservasi** → langkah 6 |
+| 4 | Petugas | Memilih reservasi (hanya yang **Dikonfirmasi**; jika dari tombol Pesanan sudah terpilih) |
+| 5 | Sistem | Menampilkan info **Pelanggan, Meja, Jadwal, Tamu** dari reservasi → ke langkah 7 |
+| 6 | Petugas | Memilih pelanggan terdaftar atau mengisi pelanggan baru, dan tanggal pesanan |
+| 7 | Petugas | Mengisi jumlah menu (tombol −/+) |
+| 8 | Sistem | Menampilkan **pratinjau** subtotal, jumlah item, dan total |
+| 9 | Petugas | Klik **Simpan Pesanan** |
+| 10 | Sistem | Memvalidasi: dari reservasi → reservasi Dikonfirmasi & tanggalnya sudah tiba, lalu pelanggan & tanggal diambil dari reservasi; walk-in → pelanggan ada (atau dibuat), tanggal ≤ hari ini. Menyusun item dengan **harga dari database**, jumlah 1–100, menu tersedia |
+| 11 | Sistem | ◇ Valid & minimal 1 item? **Tidak** → pesan error → kembali ke langkah 7 |
+| 12 | Sistem | Menghitung total → **BEGIN** → simpan pesanan (Diproses) + semua item → **COMMIT** (gagal → **ROLLBACK** + pesan gagal) |
+| 13 | Sistem | Menampilkan **Detail Pesanan** |
+| 14 | Petugas | Setelah pesanan disajikan & dibayar: klik **Tandai Selesai** |
+| 15 | Sistem | Status pesanan **Selesai** → ◇ Pesanan terkait reservasi **dan** tidak ada pesanan lain yang masih Diproses? **Ya** → reservasi otomatis **Selesai** → pesan *"Reservasi terkait otomatis ditandai selesai"* → ◉ Selesai; **Tidak** → ◉ Selesai |
 
 ```mermaid
 flowchart TD
     start((●)) --> a1[Petugas: Klik Pesanan pada reservasi / Buat Pesanan]
-    a1 --> s1[Sistem: Tampilkan form, isi otomatis dari reservasi]
-    s1 --> a2[Petugas: Isi jumlah menu dengan tombol -/+]
-    a2 --> s2[Sistem: Pratinjau subtotal & total]
-    s2 --> a3[Petugas: Simpan Pesanan]
-    a3 --> s3[Sistem: Validasi pelanggan, reservasi, tanggal; harga dari DB]
+    a1 --> d0{Jenis pesanan?}
+    d0 -- Dari reservasi --> a2[Petugas: Pilih reservasi Dikonfirmasi]
+    a2 --> s1[Sistem: Tampilkan pelanggan, meja, jadwal, tamu]
+    d0 -- Tanpa reservasi --> a3[Petugas: Pilih / tambah pelanggan & tanggal]
+    s1 --> a4[Petugas: Isi jumlah menu -/+]
+    a3 --> a4
+    a4 --> s2[Sistem: Pratinjau total]
+    s2 --> a5[Petugas: Simpan Pesanan]
+    a5 --> s3[Sistem: Validasi; harga dari DB; pelanggan & tanggal dari reservasi]
     s3 --> d1{Valid & minimal 1 item?}
-    d1 -- Tidak --> e1[Sistem: Pesan error] --> a2
-    d1 -- Ya --> s4[Sistem: BEGIN, simpan pesanan & item]
-    s4 --> d2{Berhasil?}
-    d2 -- Tidak --> e2[Sistem: ROLLBACK & pesan gagal] --> a3
-    d2 -- Ya --> s5[Sistem: COMMIT & tampilkan detail]
-    s5 --> a4[Petugas: Tandai Selesai / Batalkan]
-    a4 --> s6[Sistem: Status final] --> stop((◉))
+    d1 -- Tidak --> e1[Sistem: Pesan error] --> a4
+    d1 -- Ya --> s4[Sistem: Transaksi simpan pesanan & item]
+    s4 --> s5[Sistem: Tampilkan detail pesanan]
+    s5 --> a6[Petugas: Tandai Selesai]
+    a6 --> d2{Terkait reservasi & tidak ada pesanan lain Diproses?}
+    d2 -- Ya --> s6[Sistem: Reservasi otomatis Selesai] --> stop((◉))
+    d2 -- Tidak --> stop
 ```
 
 #### 5.2.3 Melihat & Mencetak Laporan — `04-activity-laporan.drawio`
@@ -836,50 +847,44 @@ flowchart TD
     O --> Z
 ```
 
-#### 5.3.3 Simpan Pesanan dengan Transaksi — `07-flowchart-pesanan.drawio`
+#### 5.3.3 Simpan Pesanan dan Penyelesaian Otomatis Reservasi — `07-flowchart-pesanan.drawio`
 
 1. **Mulai**
-2. /Input: customer_id **atau** data pelanggan baru, reservation_id (opsional), order_date, jumlah per menu/
-   - Jika pelanggan baru: transaksi dimulai lebih dulu dan pelanggan disimpan; `Order::create()` lalu **tidak** memulai transaksi sendiri, dan transaksi luar yang melakukan COMMIT/ROLLBACK (pelanggan baru ikut batal bila pesanan gagal).
-3. ◇ Pelanggan valid & ada? **Tidak** → catat error
-4. ◇ Reservasi diisi?
-   - **Ya** → ◇ Ada & milik pelanggan? **Tidak** → catat error → ◇ Status Dikonfirmasi/Selesai? **Tidak** → catat error → ◇ Tanggal reservasi ≤ hari ini? **Tidak** → catat error → jika semua lolos: `order_date = reservation_date`
-   - **Tidak** → ◇ Tanggal pesanan valid dan ≤ hari ini? **Tidak** → catat error
-5. Ambil daftar menu **tersedia** (harga dari database)
-6. Untuk setiap menu dengan jumlah > 0: validasi jumlah (bilangan bulat 1–100), `subtotal = harga × jumlah`
-7. ◇ Minimal 1 item **dan** tidak ada error? **Tidak** → /Tampilkan pesan error/ → **Selesai**
-8. `total = Σ subtotal`
-9. **BEGIN TRANSACTION**
-10. INSERT `restaurant_orders` (status `Diproses`, total) → ambil `order_id`
-11. INSERT `order_items` untuk setiap item (menu_name, price, quantity, subtotal)
-12. ◇ Terjadi error database? **Ya** → **ROLLBACK** → catat ke log → /Tampilkan "Pesanan gagal disimpan. Silakan coba lagi."/ → **Selesai**
-13. **COMMIT**
-14. /Tampilkan detail pesanan & pesan berhasil/
-15. **Selesai**
+2. /Input: jenis pesanan, reservation_id **atau** (customer_id / data pelanggan baru + order_date), jumlah per menu/
+3. ◇ Jenis = Dari reservasi?
+   - **Ya** → ◇ Reservasi dipilih & ditemukan? **Tidak** → catat error → ◇ Status Dikonfirmasi **dan** tanggal ≤ hari ini? **Tidak** → catat error → jika lolos: `customer_id = pemilik reservasi`, `order_date = tanggal reservasi`
+   - **Tidak** (walk-in) → (jika pelanggan baru: BEGIN, simpan pelanggan) → ◇ Pelanggan valid? **Tidak** → catat error → ◇ Tanggal ≤ hari ini? **Tidak** → catat error
+4. Ambil menu **tersedia** (harga dari database); untuk setiap jumlah > 0: validasi 1–100, `subtotal = harga × jumlah`
+5. ◇ Minimal 1 item **dan** tidak ada error? **Tidak** → (ROLLBACK jika ada pelanggan baru) → /Tampilkan pesan error/ → **Selesai**
+6. `total = Σ subtotal` → **BEGIN** (jika belum) → INSERT `restaurant_orders` (Diproses) → INSERT `order_items`
+7. ◇ Error database? **Ya** → **ROLLBACK** → /Pesanan gagal disimpan/ → **Selesai**
+8. **COMMIT** → /Tampilkan detail pesanan/
+9. /Petugas klik Tandai Selesai/ → **BEGIN** → UPDATE pesanan = Selesai
+10. ◇ Pesanan punya reservasi? **Ya** → hitung pesanan lain yang masih Diproses → ◇ Reservasi Dikonfirmasi **dan** jumlahnya 0? **Ya** → UPDATE reservasi = **Selesai**
+11. **COMMIT** → /Tampilkan pesan (+ "Reservasi terkait otomatis ditandai selesai")/
+12. **Selesai**
 
 ```mermaid
 flowchart TD
-    A([Mulai]) --> B[/Input pesanan & jumlah per menu/]
-    B --> C[Validasi pelanggan]
-    C --> D{Reservasi diisi?}
-    D -- Ya --> D1{Milik pelanggan, Dikonfirmasi/Selesai, tanggal ≤ hari ini?}
-    D1 -- Tidak --> D2[Catat error] --> F
-    D1 -- Ya --> D3[order_date = tanggal reservasi] --> F
-    D -- Tidak --> E{Tanggal ≤ hari ini?}
-    E -- Tidak --> E1[Catat error] --> F
-    E -- Ya --> F[Ambil menu tersedia & harga dari DB]
-    F --> G[Susun item: jumlah 1-100, subtotal = harga × jumlah]
-    G --> H{Valid & minimal 1 item?}
-    H -- Tidak --> X1[/Tampilkan pesan error/] --> Z([Selesai])
-    H -- Ya --> I[total = Σ subtotal]
-    I --> J[BEGIN TRANSACTION]
-    J --> K[(INSERT restaurant_orders)]
-    K --> L[(INSERT order_items tiap item)]
-    L --> M{Error database?}
-    M -- Ya --> N[ROLLBACK & catat log] --> X2[/Pesanan gagal disimpan/] --> Z
-    M -- Tidak --> O[COMMIT]
-    O --> P[/Tampilkan detail pesanan/]
-    P --> Z
+    A([Mulai]) --> B[/Input jenis pesanan, reservasi atau pelanggan, jumlah menu/]
+    B --> C{Dari reservasi?}
+    C -- Ya --> C1{Reservasi Dikonfirmasi & tanggal ≤ hari ini?}
+    C1 -- Tidak --> E1[Catat error] --> F
+    C1 -- Ya --> C2[Pelanggan & tanggal = dari reservasi] --> F
+    C -- Tidak --> D{Pelanggan valid & tanggal ≤ hari ini?}
+    D -- Tidak --> E2[Catat error] --> F
+    D -- Ya --> F[Susun item: harga dari DB, jumlah 1-100]
+    F --> G{Valid & minimal 1 item?}
+    G -- Tidak --> X1[/Tampilkan pesan error/] --> Z([Selesai])
+    G -- Ya --> H[BEGIN, INSERT pesanan & item]
+    H --> I{Error database?}
+    I -- Ya --> J[ROLLBACK] --> X2[/Pesanan gagal disimpan/] --> Z
+    I -- Tidak --> K[COMMIT, tampilkan detail]
+    K --> L[/Tandai Selesai/]
+    L --> M[UPDATE pesanan = Selesai]
+    M --> N{Ada reservasi & tidak ada pesanan lain Diproses?}
+    N -- Ya --> O[(UPDATE reservasi = Selesai)] --> P[/Pesan + reservasi otomatis selesai/] --> Z
+    N -- Tidak --> P2[/Pesan pesanan selesai/] --> Z
 ```
 
 ---
@@ -1045,7 +1050,7 @@ Perkiraan total: **20–30 halaman**. Penomoran gambar per bab (Gambar 4.1, 4.2,
 
 ### BAB VII — DEBUGGING (±2 halaman)
 
-- 5 kasus dari Bagian 7.3, masing-masing dalam **tabel 4 baris**: Gejala, Penyebab, Perbaikan, Verifikasi.
+- 6 kasus dari Bagian 7.3, masing-masing dalam **tabel 4 baris**: Gejala, Penyebab, Perbaikan, Verifikasi.
 
 ### BAB VIII — HASIL PENGUJIAN (±3 halaman)
 
@@ -1073,7 +1078,7 @@ Perkiraan total: **20–30 halaman**. Penomoran gambar per bab (Gambar 4.1, 4.2,
 
 ### 7.1 Unit Test — `php tests/test_functions.php`
 
-Lingkungan: PHP 8.3.6 CLI. Hasil: **68 PASS, 0 FAIL**, exit code **0**.
+Lingkungan: PHP 8.3.6 CLI. Hasil: **78 PASS, 0 FAIL**, exit code **0**.
 
 **Ringkasan per kelompok (untuk Tabel 8.1):**
 
@@ -1085,8 +1090,9 @@ Lingkungan: PHP 8.3.6 CLI. Hasil: **68 PASS, 0 FAIL**, exit code **0**.
 | Penolakan reservasi bentrok (slot 2 jam) | 10 | 10 | 0 |
 | Jam operasional dan waktu reservasi | 11 | 11 | 0 |
 | Alur status reservasi dan pesanan | 11 | 11 | 0 |
+| Pesanan dari reservasi dan penyelesaian otomatis | 10 | 10 | 0 |
 | Validasi data lain (pelanggan, tanggal, waktu, rentang, escape HTML) | 7 | 7 | 0 |
-| **Total** | **68** | **68** | **0** |
+| **Total** | **78** | **78** | **0** |
 
 **Output lengkap (salin apa adanya):**
 
@@ -1164,6 +1170,18 @@ Lingkungan: PHP 8.3.6 CLI. Hasil: **68 PASS, 0 FAIL**, exit code **0**.
 [PASS] Tanggal pesanan hari ini diterima
 [PASS] Tanggal pesanan besok ditolak
 
+== Pesanan dari reservasi dan penyelesaian otomatis ==
+[PASS] Reservasi Dikonfirmasi hari ini boleh dibuatkan pesanan
+[PASS] Reservasi Dikonfirmasi kemarin masih boleh dibuatkan pesanan
+[PASS] Reservasi Menunggu (belum dikonfirmasi) ditolak
+[PASS] Reservasi Selesai ditolak
+[PASS] Reservasi Dibatalkan ditolak
+[PASS] Reservasi Dikonfirmasi untuk besok ditolak
+[PASS] Pesanan terakhir selesai -> reservasi Dikonfirmasi ikut Selesai
+[PASS] Masih ada pesanan Diproses -> reservasi belum diselesaikan
+[PASS] Reservasi yang sudah Selesai tidak diproses ulang
+[PASS] Reservasi Dibatalkan tidak diselesaikan otomatis
+
 == Validasi data lain ==
 [PASS] Data pelanggan valid tanpa email diterima
 [PASS] Email pelanggan tidak valid ditolak
@@ -1173,25 +1191,25 @@ Lingkungan: PHP 8.3.6 CLI. Hasil: **68 PASS, 0 FAIL**, exit code **0**.
 [PASS] Rentang tanggal terbalik ditolak
 [PASS] Escape HTML mencegah tag script
 
-Hasil: 68 PASS, 0 FAIL dari 68 pengujian.
+Hasil: 78 PASS, 0 FAIL dari 78 pengujian.
 ```
 
-**Bukti runner mendeteksi kegagalan:** pada salinan sementara, `calculateSubtotal()` sengaja dirusak (perkalian diganti penjumlahan). Hasilnya **63 PASS, 5 FAIL dari 68 pengujian** dengan exit code **1**. Kode asli tidak diubah.
+**Bukti runner mendeteksi kegagalan:** pada salinan sementara, `calculateSubtotal()` sengaja dirusak (perkalian diganti penjumlahan). Hasilnya **73 PASS, 5 FAIL dari 78 pengujian** dengan exit code **1**. Kode asli tidak diubah.
 
 ### 7.2 Pengujian End-to-End dan Rollback
 
-Lingkungan: MariaDB 10.11.14 + server bawaan PHP (`php -S 127.0.0.1:8000`), database diimpor dari `database.sql` (data contoh), diuji dengan skrip curl. Versi awal aplikasi lulus 48/48 skenario. Setelah perbaikan alur reservasi & pesanan skrip menjadi 61 skenario (61 OK), lalu setelah fitur pelanggan baru dari form menjadi **74 skenario**: **74 OK, 0 FAIL**, tanpa warning/notice PHP di log server.
+Lingkungan: MariaDB 10.11.14 + server bawaan PHP (`php -S 127.0.0.1:8000`), database diimpor dari `database.sql` (data contoh), diuji dengan skrip curl. Versi awal aplikasi lulus 48/48 skenario. Setelah perbaikan alur reservasi & pesanan skrip menjadi 61 skenario (61 OK), lalu setelah fitur pelanggan baru dari form menjadi 74 skenario (74 OK), dan setelah perbaikan alur pesanan dari reservasi menjadi **90 skenario**: **90 OK, 0 FAIL**, tanpa warning/notice PHP di log server.
 
 | No | Kelompok skenario | Hasil |
 |---|---|---|
 | 1 | Sepuluh halaman/tampilan (termasuk form reservasi & form pesanan) merespons HTTP 200; dashboard menampilkan pendapatan hari ini Rp 120.000 | OK |
 | 2 | Reservasi: dibuat dengan status Menunggu; tumpang tindih 2 jam (19:00 vs 18:00) ditolak; slot bersambung 17:00 diterima; tanggal lewat, jam 09:00, dan jam 21:00 ditolak; tamu melebihi kapasitas dan meja Nonaktif ditolak; form tetap terisi setelah gagal; mengubah reservasi sendiri tidak bentrok; form tidak punya pilihan status | OK |
 | 3 | Alur status reservasi: Konfirmasi berhasil; Menunggu → Selesai ditolak; Selesai sebelum tanggalnya ditolak; batalkan reservasi berpesanan ditolak; ubah reservasi Selesai ditolak; ganti pelanggan pada reservasi berpesanan ditolak; batal dua kali ditolak; filter Hari Ini & status bekerja | OK |
-| 4 | Pesanan dari reservasi: form terisi otomatis; tanggal pesanan dipaksa = tanggal reservasi; detail menampilkan meja; total **Rp 65.000** | OK |
-| 5 | Pesanan ditolak bila: reservasi masih besok, reservasi Menunggu, reservasi milik pelanggan lain, tanggal di masa depan, jumlah 101, menu tidak tersedia, tanpa item | OK |
-| 6 | Alur status pesanan: Diproses → Selesai (tombol ubah status hilang); Selesai → Diproses ditolak; pesanan dibatalkan lalu reservasinya bisa dibatalkan; filter status pesanan | OK |
+| 4 | Pesanan dari reservasi: tombol Pesanan membuka jenis "Dari reservasi" dengan reservasi terpilih dan info pelanggan & meja; pelanggan otomatis = pemilik reservasi (customer_id kiriman diabaikan); tanggal = tanggal reservasi; total **Rp 65.000** | OK |
+| 5 | Pesanan ditolak bila: reservasi besok, reservasi Menunggu (harus dikonfirmasi), reservasi Selesai, jenis "Dari reservasi" tanpa reservasi; walk-in tanpa pelanggan atau bertanggal besok; jumlah 101; menu tidak tersedia; tanpa item | OK |
+| 6 | Penyelesaian otomatis: dua pesanan untuk satu reservasi → Selesai manual ditolak selama ada pesanan Diproses; setelah pesanan pertama selesai reservasi masih Dikonfirmasi; setelah pesanan terakhir selesai reservasi **otomatis Selesai** (dicek di database) dan tombol Pesanan hilang; Selesai → Diproses ditolak; ubah tanggal reservasi berpesanan ditolak; membatalkan pesanan tidak menyelesaikan reservasi; konfirmasi reservasi bertanggal kemarin ditolak (tetap bisa dibatalkan) | OK |
 | 7 | Data master: nonaktifkan meja yang punya reservasi mendatang ditolak; pencarian pelanggan; hapus pelanggan berelasi ditolak; nama berisi `<b>` tampil ter-escape | OK |
-| 8 | Laporan hari ini: total Rp 120.000 (pesanan Dibatalkan tidak dihitung); tombol cetak; rentang terbalik ditolak | OK |
+| 8 | Laporan hari ini: total Rp 110.000 (pesanan Dibatalkan tidak dihitung); tombol cetak; rentang terbalik ditolak | OK |
 | 9 | Pelanggan baru dari form: reservasi + pelanggan baru berhasil dan pelanggan muncul di data Pelanggan; reservasi tidak valid / pesanan tanpa item → pelanggan baru **tidak** tersimpan, form tetap terisi; telepon terdaftar & telepon tidak valid ditolak; pesanan walk-in + pelanggan baru berhasil; telepon duplikat di halaman Pelanggan ditolak | OK |
 
 **Uji rollback transaksi:** trigger sementara pada `order_items` dipasang untuk memaksa INSERT gagal, lalu `Order::create()` dipanggil dengan tanggal hari ini. Hasil: pengguna menerima pesan "Pesanan gagal disimpan. Silakan coba lagi.", dan jumlah baris `restaurant_orders` **tetap sama** sebelum dan sesudah (**ROLLBACK OK**). Uji diulang untuk pesanan **bersama pelanggan baru**: jumlah `customers` dan `restaurant_orders` sama-sama tidak berubah (**ROLLBACK OK**). Trigger dihapus setelah pengujian.
@@ -1236,7 +1254,7 @@ Lingkungan: MariaDB 10.11.14 + server bawaan PHP (`php -S 127.0.0.1:8000`), data
 | Gejala | Setelah `hasReservationConflict()` diubah menjadi "tumpang tindih dalam 2 jam", test lama gagal: `[FAIL] Waktu berbeda pada meja sama diterima` (**40 PASS, 1 FAIL**, exit code 1). |
 | Penyebab | Test lama mengharapkan 20:00 diterima walaupun ada 19:00 di meja sama. Dengan aturan baru, 20:00 masih di dalam slot 19:00–21:00, jadi penolakan adalah perilaku yang benar; harapan test-nya yang perlu diperbarui. |
 | Perbaikan | Test diganti dengan kasus batas: 19:00 vs 20:30 dan 17:30 vs 19:00 harus ditolak; 19:00 vs 21:00 dan 17:00 vs 19:00 (bersambung) harus diterima. |
-| Verifikasi | 68 pengujian PASS. Saat aturan sengaja dikembalikan ke "jam persis sama" pada salinan sementara, dua test tumpang tindih langsung gagal (**66 PASS, 2 FAIL**, exit code 1). |
+| Verifikasi | Semua pengujian PASS (68 pengujian pada saat itu). Saat aturan sengaja dikembalikan ke "jam persis sama" pada salinan sementara, dua test tumpang tindih langsung gagal (**66 PASS, 2 FAIL**, exit code 1). |
 
 **Debugging 5 — Halaman melebar ke samping di layar ponsel**
 
@@ -1246,6 +1264,15 @@ Lingkungan: MariaDB 10.11.14 + server bawaan PHP (`php -S 127.0.0.1:8000`), data
 | Penyebab | Pengukuran elemen dengan Playwright menunjukkan `.table-responsive` sudah benar. Penyebabnya teks `.visually-hidden` (posisi `absolute`) pada tombol ikon di kolom Aksi yang "lolos" dari area scroll karena kontainernya tidak berposisi `relative`. |
 | Perbaikan | Menambahkan `.table-responsive { position: relative; }` di `assets/css/style.css`. |
 | Verifikasi | Pengukuran ulang di 9 halaman: lebar dokumen tepat 390 px, tabel lebar tetap bisa di-scroll di dalam kartunya. |
+
+**Debugging 6 — Pengujian alur menemukan 6 kejanggalan antara reservasi dan pesanan**
+
+| Aspek | Isi |
+|---|---|
+| Gejala | Skrip uji alur (curl + cek database) pada versi sebelumnya menunjukkan: (1) pesanan Selesai tetapi reservasi tetap Dikonfirmasi; (2) reservasi bisa Selesai padahal pesanannya masih Diproses; (3) tanggal reservasi bisa diubah setelah ada pesanan, sehingga tanggal reservasi 13-10 sedangkan pesanan 12-10; (4) pesanan baru bisa dibuat untuk reservasi Selesai; (5) reservasi Menunggu bertanggal kemarin bisa dikonfirmasi; (6) pesanan dari reservasi tetap meminta pelanggan dipilih manual. |
+| Penyebab | Pesanan dan reservasi diperlakukan sebagai dua alur terpisah: tidak ada aturan yang menghubungkan status keduanya, dan form pesanan mengharuskan memilih pelanggan dulu baru reservasi. |
+| Perbaikan | Hanya reservasi Dikonfirmasi yang bisa dipesan, dan pelanggan/tanggal diambil dari reservasi (`validateReservationForOrder()`). Form diawali pilihan "Dari reservasi"/"Tanpa reservasi". Reservasi otomatis Selesai saat pesanan terakhirnya selesai (`shouldCompleteReservation()`). Selesai manual ditolak selama ada pesanan Diproses, konfirmasi tanggal lewat ditolak, dan tanggal reservasi dikunci setelah ada pesanan. |
+| Verifikasi | 10 unit test baru, 16 skenario E2E baru (termasuk dua pesanan untuk satu reservasi), dan uji lewat browser sungguhan (Konfirmasi → Pesanan → info otomatis → Simpan → Tandai Selesai → "Reservasi terkait otomatis ditandai selesai"). Semua lulus. |
 
 ### 7.4 Pemetaan Unit Kompetensi
 
@@ -1257,8 +1284,8 @@ Lingkungan: MariaDB 10.11.14 + server bawaan PHP (`php -S 127.0.0.1:8000`), data
 | J.620100.019.02 | Menggunakan library atau komponen pre-existing | Bootstrap 5.3.3 & Bootstrap Icons (CDN), PDO |
 | J.620100.021.02 | Menerapkan akses basis data | `database.sql` (PK, FK, DECIMAL), koneksi PDO, transaksi di `Order::create()` |
 | J.620100.023.02 | Membuat dokumen kode program | README, komentar seperlunya, laporan, outline presentasi |
-| J.620100.025.02 | Melakukan debugging | 5 kasus debugging (Bab VII) |
-| J.620100.033.02 | Melaksanakan pengujian unit program | `tests/test_functions.php`: 68 pengujian, PASS/FAIL, exit code |
+| J.620100.025.02 | Melakukan debugging | 6 kasus debugging (Bab VII) |
+| J.620100.033.02 | Melaksanakan pengujian unit program | `tests/test_functions.php`: 78 pengujian, PASS/FAIL, exit code |
 
 ---
 
@@ -1370,7 +1397,7 @@ Laporan-LSP-Sistem-Pemesanan-Restoran/
 **Diagram**
 - [ ] 8 file `.drawio` ada dan terbuka di app.diagrams.net tanpa error.
 - [ ] Use case memuat 1 aktor, batas sistem, 12 use case, 2 `«include»`, dan 2 `«extend»` dengan arah panah benar.
-- [ ] Activity & flowchart reservasi/pesanan memuat aturan baru: jam operasional, waktu lewat, slot 2 jam, alur status, pesanan hanya untuk reservasi Dikonfirmasi/Selesai.
+- [ ] Activity & flowchart reservasi/pesanan memuat aturan baru: jam operasional, waktu lewat, slot 2 jam, alur status, pesanan hanya untuk reservasi Dikonfirmasi (pelanggan & meja otomatis), reservasi otomatis Selesai saat pesanan terakhirnya selesai.
 - [ ] 3 activity diagram memakai swimlane Petugas │ Sistem, punya initial & final node, dan cabang berlabel.
 - [ ] 3 flowchart memakai simbol standar (terminator, proses, keputusan, input/output) dengan label Ya/Tidak.
 - [ ] ERD memuat 6 tabel dengan **semua kolom**, PK/FK ditandai, dan 6 relasi crow's foot dengan kardinalitas sesuai Bagian 4.2.
@@ -1381,7 +1408,7 @@ Laporan-LSP-Sistem-Pemesanan-Restoran/
 - [ ] Daftar Isi, Daftar Gambar, dan Daftar Tabel otomatis.
 - [ ] BAB I–IX lengkap sesuai Bagian 6; BAB IV memuat 8 gambar diagram + tabel use case + tabel relasi + 6 tabel kamus data.
 - [ ] Nama tabel/kolom/tipe di kamus data **identik** dengan Bagian 4.1.
-- [ ] Hasil pengujian dan debugging **identik** dengan Bagian 7 (68 PASS/0 FAIL; E2E 74/74; rollback OK; 5 kasus debugging).
+- [ ] Hasil pengujian dan debugging **identik** dengan Bagian 7 (78 PASS/0 FAIL; E2E 90/90; rollback OK; 6 kasus debugging).
 - [ ] Caption gambar di bawah, caption tabel di atas, penomoran berurutan per bab.
 - [ ] Format sesuai Bagian 8 (A4, margin 4-3-3-3, Times New Roman 12, spasi 1,5, nomor halaman).
 - [ ] Tidak ada fitur yang tidak ada di aplikasi (tidak ada login, pembayaran, API, ekspor PDF/Excel).

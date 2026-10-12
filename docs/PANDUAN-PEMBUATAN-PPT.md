@@ -36,7 +36,7 @@
 **Aturan wajib:**
 
 1. **8 slide utama** sesuai urutan di Bagian 3. Jangan menambah slide utama; materi tambahan masuk slide cadangan setelah slide penutup.
-2. **Jangan mengarang.** Angka pengujian (68 PASS/0 FAIL, 74/74 skenario, rollback OK) adalah data asli. Salin apa adanya.
+2. **Jangan mengarang.** Angka pengujian (78 PASS/0 FAIL, 90/90 skenario, rollback OK) adalah data asli. Salin apa adanya.
 3. **Identitas peserta memakai placeholder**: `[Nama Peserta]`, `[No. Peserta]`, `[Tanggal Uji]`, `[Nama Asesor]`, `[Logo LSP / Instansi]`.
 4. **Sedikit teks, banyak visual.** Maksimal **±6 poin per slide** dan **±8 kata per poin**. Penjelasan detail ditaruh di **speaker notes**.
 5. **Speaker notes wajib** di setiap slide, berbahasa Indonesia, dari naskah Bagian 6.
@@ -72,7 +72,7 @@
 | Pelanggan, Meja, Menu | Tambah, ubah, hapus, cari; telepon pelanggan unik; data berelasi dilindungi |
 | Pelanggan baru dari form | Di form reservasi/pesanan bisa pilih pelanggan terdaftar atau langsung tambah pelanggan baru (tersimpan otomatis, satu transaksi) |
 | Reservasi | Alur Menunggu → Dikonfirmasi → Selesai; jam buka 10:00–22:00; slot 2 jam; cek kapasitas & tumpang tindih |
-| Pesanan | Dari reservasi yang tamunya sudah datang; pratinjau total; harga terkunci saat dipesan; Diproses → Selesai/Dibatalkan |
+| Pesanan | Pilih reservasi Dikonfirmasi → pelanggan & meja otomatis, tinggal pilih menu (atau walk-in); pratinjau total; selesai → reservasi otomatis Selesai |
 | Laporan | Filter rentang tanggal + pintasan periode; total tanpa pesanan dibatalkan; cetak lewat browser |
 
 ### 1.4 Aturan Bisnis Kunci (untuk dibahas)
@@ -81,7 +81,8 @@
 - Jam operasional **10:00–22:00**, setiap reservasi memakai meja **2 jam** (jam mulai paling lambat 20:00); tanggal/jam yang sudah lewat ditolak.
 - **Jumlah tamu ≤ kapasitas meja**; meja `Nonaktif` tidak bisa direservasi (di form, meja yang terlalu kecil otomatis tidak bisa dipilih).
 - Meja yang sama tidak boleh punya dua reservasi aktif yang **tumpang tindih** (contoh: ada 19:00 → 18:00 ditolak, 21:00 boleh).
-- Pesanan dari reservasi hanya untuk reservasi **Dikonfirmasi/Selesai** milik pelanggan yang sama; tanggal pesanan otomatis mengikuti tanggal reservasi. Reservasi yang sudah punya pesanan tidak bisa dibatalkan.
+- Pesanan **Dari reservasi** hanya untuk reservasi **Dikonfirmasi**; pelanggan, meja, dan tanggal otomatis dari reservasi, petugas tinggal memilih menu. Reservasi berpesanan tidak bisa dibatalkan dan tanggalnya terkunci.
+- Pesanan terakhir ditandai **Selesai** → reservasinya **otomatis Selesai**. Selama masih ada pesanan Diproses, reservasi tidak bisa diselesaikan manual.
 - Harga pesanan diambil dari **database** (bukan form), lalu **disalin** ke detail pesanan.
 - Pesanan + item disimpan dalam **satu transaksi** (`BEGIN` → `COMMIT`, atau `ROLLBACK` jika gagal).
 - Data yang masih dipakai (misalnya pelanggan yang punya pesanan) **tidak bisa dihapus**; pesan yang tampil jelas.
@@ -148,22 +149,23 @@ class Reservation extends BaseModel { /* cek kapasitas & bentrok */ }
 
 | Pengujian | Hasil |
 |---|---|
-| Unit test `php tests/test_functions.php` | **68 PASS, 0 FAIL** (exit code 0) |
-| Rincian unit test | Subtotal/total **11**, tamu vs kapasitas **5**, harga & kuantitas **13**, reservasi bentrok slot 2 jam **10**, jam operasional & waktu **11**, alur status **11**, validasi lain **7** |
-| Bukti runner mendeteksi gagal | Fungsi sengaja dirusak pada salinan → **63 PASS, 5 FAIL**, exit code 1 |
-| Uji end-to-end (HTTP, MariaDB + server PHP) | **74 dari 74 skenario OK**, tanpa warning PHP |
+| Unit test `php tests/test_functions.php` | **78 PASS, 0 FAIL** (exit code 0) |
+| Rincian unit test | Subtotal/total **11**, tamu vs kapasitas **5**, harga & kuantitas **13**, reservasi bentrok slot 2 jam **10**, jam operasional & waktu **11**, alur status **11**, pesanan dari reservasi & penyelesaian otomatis **10**, validasi lain **7** |
+| Bukti runner mendeteksi gagal | Fungsi sengaja dirusak pada salinan → **73 PASS, 5 FAIL**, exit code 1 |
+| Uji end-to-end (HTTP, MariaDB + server PHP) | **90 dari 90 skenario OK**, tanpa warning PHP |
 | Uji rollback transaksi | Insert item dipaksa gagal → pesanan **tidak tersimpan setengah** (ROLLBACK OK) |
-| Contoh angka uji | Pesanan dari reservasi: total **Rp 65.000**, tanggal otomatis = tanggal reservasi; laporan hari ini **Rp 120.000** (pesanan dibatalkan tidak dihitung); pratinjau form Rp 75.000 (2 × 30.000 + 3 × 5.000) |
+| Contoh angka uji | Pesanan dari reservasi: total **Rp 65.000**, tanggal otomatis = tanggal reservasi; laporan hari ini **Rp 120.000** dari data contoh (pesanan dibatalkan tidak dihitung); pratinjau form Rp 75.000 (2 × 30.000 + 3 × 5.000) |
 | Belum diuji | XAMPP/Laragon di Windows |
 
-### 1.9 Debugging (5 kasus asli)
+### 1.9 Debugging (6 kasus asli)
 
 | Kasus | Ringkas |
 |---|---|
 | Uji E2E gagal di detail pesanan | Aplikasi benar; skrip uji `curl -X POST -L` tetap POST saat redirect → opsi diperbaiki → 48/48 OK |
 | README ber-encoding UTF-16 | `grep` gagal membaca → dikonversi ke UTF-8 dengan `iconv` → terbaca normal |
 | Format waktu `HH:MM` vs `HH:MM:SS` | Diantisipasi dengan `normalizeTime()`; tanpa fungsi itu unit test langsung FAIL (40 PASS, 1 FAIL, versi awal) |
-| Test lama gagal setelah aturan slot 2 jam | 20:00 vs 19:00 kini memang bentrok → harapan test diperbarui dengan kasus batas → 68 PASS |
+| Test lama gagal setelah aturan slot 2 jam | 20:00 vs 19:00 kini memang bentrok → harapan test diperbarui dengan kasus batas → semua PASS |
+| Kejanggalan alur reservasi–pesanan | Pengujian alur menemukan 6 masalah (mis. pesanan Selesai tapi reservasi tetap Dikonfirmasi) → aturan penghubung status & form "Dari reservasi" → 10 unit test + 16 skenario E2E baru lulus |
 | Halaman melebar di layar ponsel | Teks `visually-hidden` di tombol tabel lolos dari area scroll → `.table-responsive { position: relative; }` → lebar pas 390 px |
 
 ### 1.10 Pemetaan Unit Kompetensi
@@ -176,8 +178,8 @@ class Reservation extends BaseModel { /* cek kapasitas & bentrok */ }
 | J.620100.019.02 | Bootstrap 5, PDO |
 | J.620100.021.02 | MySQL, relasi FK, transaksi |
 | J.620100.023.02 | README, laporan, presentasi |
-| J.620100.025.02 | 5 kasus debugging |
-| J.620100.033.02 | 68 unit test PASS/FAIL |
+| J.620100.025.02 | 6 kasus debugging |
+| J.620100.033.02 | 78 unit test PASS/FAIL |
 
 ---
 
@@ -268,7 +270,7 @@ Setiap slide berisi: **judul**, **tata letak**, **isi**, **visual**, dan **speak
 | pengguna | Pelanggan | Kelola data, email opsional |
 | meja | Meja & Menu | Kapasitas, status, harga |
 | kalender | Reservasi | Alur status, slot 2 jam, cek kapasitas |
-| struk | Pesanan | Dari reservasi, pratinjau total |
+| struk | Pesanan | Dari reservasi: tinggal pilih menu |
 | printer | Laporan | Filter tanggal & cetak |
 
 - **Visual:** ikon konsisten di setiap kartu. Opsional: `01-use-case.png`.
@@ -303,31 +305,32 @@ Setiap slide berisi: **judul**, **tata letak**, **isi**, **visual**, dan **speak
   2. Tambah pelanggan (email salah → **ditolak**)
   3. Reservasi dengan **Pelanggan baru** + 5 tamu: M01/M02 otomatis tidak bisa dipilih → M03 besok 19:00 → **berhasil** (Menunggu)
   4. M03 besok 20:00 → **ditolak** (tumpang tindih 2 jam)
-  5. Konfirmasi reservasi hari ini → **Pesanan** → isi menu, pratinjau total → simpan
-  6. Tandai pesanan Selesai; batalkan reservasi berpesanan → **ditolak**
+  5. Konfirmasi reservasi hari ini → **Pesanan**: pelanggan & meja otomatis → isi menu → simpan
+  6. Tandai pesanan Selesai → reservasi **otomatis Selesai**
   7. Hapus pelanggan berelasi → **ditolak**
   8. Laporan → **Hari Ini** → **Cetak**
 - **Visual:** label merah kecil "Ditolak" dan hijau "Berhasil" di samping langkah terkait. Tulisan kecil di bawah: "Demo langsung di XAMPP/Laragon".
 
 ### Slide 7 — Hasil Pengujian
 
-- **Tata letak:** baris atas: **3 kartu angka besar**. Baris bawah: kiri = tabel rincian unit test (7 baris), kanan = ringkasan debugging (5 poin).
+- **Tata letak:** baris atas: **3 kartu angka besar**. Baris bawah: kiri = tabel rincian unit test (8 baris), kanan = ringkasan debugging (6 poin).
 - **Kartu angka:**
 
 | Angka besar | Label |
 |---|---|
-| **68 / 68** | Unit test PASS |
-| **74 / 74** | Skenario end-to-end OK |
+| **78 / 78** | Unit test PASS |
+| **90 / 90** | Skenario end-to-end OK |
 | **✓** | Rollback transaksi berhasil |
 
-- **Tabel rincian unit test:** Subtotal & total (11) · Tamu vs kapasitas (5) · Harga & kuantitas (13) · Reservasi bentrok slot 2 jam (10) · Jam operasional & waktu (11) · Alur status (11) · Validasi lain (7)
-- **Debugging (5 poin singkat):**
+- **Tabel rincian unit test:** Subtotal & total (11) · Tamu vs kapasitas (5) · Harga & kuantitas (13) · Reservasi bentrok slot 2 jam (10) · Jam operasional & waktu (11) · Alur status (11) · Pesanan dari reservasi & selesai otomatis (10) · Validasi lain (7)
+- **Debugging (6 poin singkat):**
   - Metode redirect pada skrip uji
   - Encoding README UTF-16 → UTF-8
   - Format waktu `HH:MM` vs `HH:MM:SS`
   - Test lama gagal setelah aturan slot 2 jam
   - Halaman melebar di layar ponsel
-- **Visual:** warna hijau untuk angka PASS/OK. Opsional: potongan screenshot terminal output test (tampilan teks monospace "Hasil: 68 PASS, 0 FAIL dari 68 pengujian.").
+  - Kejanggalan alur reservasi–pesanan
+- **Visual:** warna hijau untuk angka PASS/OK. Opsional: potongan screenshot terminal output test (tampilan teks monospace "Hasil: 78 PASS, 0 FAIL dari 78 pengujian.").
 
 ### Slide 8 — Kesimpulan
 
@@ -377,7 +380,7 @@ LSP-Programming/
 | Screenshot Daftar Reservasi (tombol Konfirmasi/Selesai/Pesanan) dan pesan tumpang tindih | Slide 6 | Tangkapan layar aplikasi | Placeholder `[Screenshot: Reservasi ditolak]` |
 | Screenshot Form Pesanan (pratinjau total) / Detail Pesanan | Slide 6 | Tangkapan layar aplikasi | Placeholder `[Screenshot: Form Pesanan]` |
 | Screenshot Laporan | Slide 6 | Tangkapan layar aplikasi | Placeholder `[Screenshot: Laporan]` |
-| Screenshot terminal unit test | Slide 7 (opsional) | Output `php tests/test_functions.php` | Kotak teks monospace berisi "Hasil: 68 PASS, 0 FAIL dari 68 pengujian." |
+| Screenshot terminal unit test | Slide 7 (opsional) | Output `php tests/test_functions.php` | Kotak teks monospace berisi "Hasil: 78 PASS, 0 FAIL dari 78 pengujian." |
 | `01-use-case.png` | Slide 3 (opsional), L1 | Dari panduan DOCX/draw.io | Placeholder `[Gambar: Use Case Diagram]` |
 | `08-erd.png` | Slide 4 | Dari panduan DOCX/draw.io | Gambar ulang 6 kotak tabel + garis relasi |
 | `02-activity-reservasi.png`, `07-flowchart-pesanan.png` | L2, L3 | Dari panduan DOCX/draw.io | Placeholder |
@@ -397,8 +400,8 @@ Total **±10 menit** (presentasi ±6 menit + demo ±4 menit). Masukkan naskah in
 | 3 | 1:00 | "Aplikasi memiliki enam bagian utama. Dashboard menampilkan ringkasan. Data pelanggan, meja, dan menu dapat dikelola; data yang masih berelasi tidak bisa dihapus. Reservasi mengikuti alur yang jelas: baru dibuat berstatus Menunggu, dikonfirmasi saat tamu datang, lalu diselesaikan. Sistem memeriksa jam operasional, kapasitas meja, dan slot dua jam supaya meja tidak dipesan tumpang tindih. Pesanan dibuat dari reservasi yang tamunya sudah datang, totalnya terlihat langsung di form, dan harga dikunci saat pesanan dibuat. Terakhir, laporan dapat difilter per tanggal dan dicetak." |
 | 4 | 1:00 | "Teknologi yang saya gunakan adalah PHP Native, MySQL atau MariaDB, PDO, dan Bootstrap 5 dari CDN, dijalankan dengan XAMPP atau Laragon. Database terdiri dari enam tabel yang saling berelasi dengan foreign key. Harga disimpan sebagai DECIMAL agar perhitungan uang tepat, dan pesanan beserta itemnya disimpan dalam satu transaksi sehingga tidak ada data yang tersimpan setengah." |
 | 5 | 1:15 | "Pemrograman terstruktur saya terapkan lewat fungsi-fungsi kecil di functions.php, misalnya calculateSubtotal untuk menghitung subtotal dan validateGuestCount untuk memeriksa jumlah tamu terhadap kapasitas. Fungsi ini tidak mengakses database sehingga bisa diuji langsung. Untuk OOP, saya membuat class abstrak BaseModel yang menyimpan koneksi PDO dan method umum, lalu diwarisi oleh lima class: Customer, RestaurantTable, MenuItem, Reservation, dan Order. Di sini terlihat abstraksi, pewarisan, enkapsulasi, dan dependency injection." |
-| 6 | 4:00 | "Sekarang saya demonstrasikan aplikasinya." Lalu ikuti 8 langkah demo di slide. Sorot meja yang otomatis tidak bisa dipilih saat tamu 5 orang, pesan tumpang tindih "Meja M03 sudah dipesan pada rentang waktu tersebut", tombol Konfirmasi → Pesanan yang mengisi form otomatis, pratinjau total, status pesanan yang menjadi final, penolakan batal reservasi berpesanan dan hapus pelanggan, serta tampilan cetak laporan tanpa navbar. |
-| 7 | 1:00 | "Untuk pengujian, saya membuat 68 unit test yang dijalankan dari terminal dan semuanya PASS, termasuk aturan jam operasional, slot dua jam, dan alur status. Runner akan keluar dengan status gagal jika ada test yang gagal; ini sudah saya buktikan dengan sengaja merusak fungsi pada salinan. Saya juga menguji 74 skenario aplikasi lewat HTTP dan semuanya berhasil, serta menguji rollback transaksi pesanan. Selama pengembangan ada lima kasus debugging yang saya dokumentasikan, misalnya test lama yang gagal setelah aturan bentrok diubah menjadi slot dua jam, dan halaman yang melebar di layar ponsel." |
+| 6 | 4:00 | "Sekarang saya demonstrasikan aplikasinya." Lalu ikuti 8 langkah demo di slide. Sorot meja yang otomatis tidak bisa dipilih saat tamu 5 orang, pesan tumpang tindih "Meja M03 sudah dipesan pada rentang waktu tersebut", tombol Konfirmasi → Pesanan yang langsung menampilkan pelanggan & meja, pratinjau total, pesan "Reservasi terkait otomatis ditandai selesai" setelah pesanan diselesaikan, penolakan hapus pelanggan, serta tampilan cetak laporan tanpa navbar. |
+| 7 | 1:00 | "Untuk pengujian, saya membuat 78 unit test yang dijalankan dari terminal dan semuanya PASS, termasuk aturan jam operasional, slot dua jam, alur status, dan penyelesaian otomatis reservasi saat pesanannya selesai. Runner akan keluar dengan status gagal jika ada test yang gagal; ini sudah saya buktikan dengan sengaja merusak fungsi pada salinan. Saya juga menguji 90 skenario aplikasi lewat HTTP dan semuanya berhasil, serta menguji rollback transaksi pesanan. Selama pengembangan ada enam kasus debugging yang saya dokumentasikan, misalnya test lama yang gagal setelah aturan bentrok diubah menjadi slot dua jam, dan pengujian alur yang menemukan pesanan sudah selesai tetapi reservasinya belum." |
 | 8 | 0:30 | "Kesimpulannya, semua fitur utama sesuai spesifikasi telah berjalan dan teruji, serta menunjukkan penerapan delapan unit kompetensi yang diujikan. Pengembangan selanjutnya bisa berupa login, proteksi CSRF, edit item pesanan, dan paginasi data. Terima kasih, saya siap menjawab pertanyaan." |
 
 **Persiapan demo (catatan untuk peserta, boleh dimasukkan ke speaker notes slide 6):**
@@ -454,7 +457,7 @@ Total **±10 menit** (presentasi ±6 menit + demo ±4 menit). Masukkan naskah in
 │ ▌Hasil Pengujian                                             │
 │                                                              │
 │   ┌─────────┐      ┌─────────┐      ┌─────────┐              │
-│   │ 68 / 68 │      │ 74 / 74 │      │    ✓    │              │
+│   │ 78 / 78 │      │ 90 / 90 │      │    ✓    │              │
 │   │Unit test│      │  E2E OK │      │Rollback │              │
 │   └─────────┘      └─────────┘      └─────────┘              │
 │                                                              │
@@ -464,7 +467,8 @@ Total **±10 menit** (presentasi ±6 menit + demo ±4 menit). Masukkan naskah in
 │  Harga & kuantitas ..... 13 │  • Format waktu HH:MM          │
 │  Bentrok slot 2 jam .... 10 │  • Test lama vs slot 2 jam     │
 │  Jam operasional ....... 11 │  • Layout ponsel melebar       │
-│  Alur status ........... 11 │                                │
+│  Alur status ........... 11 │  • Alur reservasi-pesanan      │
+│  Reservasi→pesanan ..... 10 │                                │
 │  Validasi lain .......... 7 │                                │
 │ Sistem Pemesanan Restoran · Sertifikasi LSP Programmer    7  │
 └──────────────────────────────────────────────────────────────┘
@@ -491,7 +495,7 @@ Total **±10 menit** (presentasi ±6 menit + demo ±4 menit). Masukkan naskah in
 - [ ] File `.pptx` 16:9, **8 slide utama** sesuai urutan Bagian 3 (+ lampiran opsional setelah slide 8).
 - [ ] Placeholder identitas tetap placeholder (`[Nama Peserta]`, dst.); tidak ada nama karangan.
 - [ ] Setiap slide punya **speaker notes** dari Bagian 6.
-- [ ] Angka pengujian **identik**: 68 PASS/0 FAIL; rincian 11-5-13-10-11-11-7; 74/74 E2E; rollback OK.
+- [ ] Angka pengujian **identik**: 78 PASS/0 FAIL; rincian 11-5-13-10-11-11-10-7; 90/90 E2E; rollback OK.
 - [ ] Tidak ada fitur yang tidak ada di aplikasi (tidak ada login, pembayaran online, API, ekspor PDF/Excel).
 - [ ] Teks minimal 16 pt, maksimal ±6 poin per slide, kode terbaca jelas.
 - [ ] Palet warna & font konsisten di semua slide; footer & nomor slide ada di slide konten.

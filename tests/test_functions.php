@@ -132,6 +132,21 @@ check('Tanggal pesanan hari ini diterima', validateOrderDate('2026-10-20', '2026
 check('Tanggal pesanan besok ditolak', validateOrderDate('2026-10-21', '2026-10-20') !== []);
 
 // ---------------------------------------------------------------------------
+section('Pesanan dari reservasi dan penyelesaian otomatis');
+
+$today = '2026-10-20';
+check('Reservasi Dikonfirmasi hari ini boleh dibuatkan pesanan', validateReservationForOrder(['status' => 'Dikonfirmasi', 'reservation_date' => '2026-10-20'], $today) === []);
+check('Reservasi Dikonfirmasi kemarin masih boleh dibuatkan pesanan', validateReservationForOrder(['status' => 'Dikonfirmasi', 'reservation_date' => '2026-10-19'], $today) === []);
+check('Reservasi Menunggu (belum dikonfirmasi) ditolak', validateReservationForOrder(['status' => 'Menunggu', 'reservation_date' => '2026-10-20'], $today) !== []);
+check('Reservasi Selesai ditolak', validateReservationForOrder(['status' => 'Selesai', 'reservation_date' => '2026-10-20'], $today) !== []);
+check('Reservasi Dibatalkan ditolak', validateReservationForOrder(['status' => 'Dibatalkan', 'reservation_date' => '2026-10-20'], $today) !== []);
+check('Reservasi Dikonfirmasi untuk besok ditolak', validateReservationForOrder(['status' => 'Dikonfirmasi', 'reservation_date' => '2026-10-21'], $today) !== []);
+check('Pesanan terakhir selesai -> reservasi Dikonfirmasi ikut Selesai', shouldCompleteReservation('Dikonfirmasi', 0) === true);
+check('Masih ada pesanan Diproses -> reservasi belum diselesaikan', shouldCompleteReservation('Dikonfirmasi', 1) === false);
+check('Reservasi yang sudah Selesai tidak diproses ulang', shouldCompleteReservation('Selesai', 0) === false);
+check('Reservasi Dibatalkan tidak diselesaikan otomatis', shouldCompleteReservation('Dibatalkan', 0) === false);
+
+// ---------------------------------------------------------------------------
 section('Validasi data lain');
 
 check('Data pelanggan valid tanpa email diterima', validateCustomerData(['name' => 'Budi', 'phone' => '081234567890', 'email' => '']) === []);
