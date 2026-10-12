@@ -42,6 +42,7 @@ LSP-Programming/
 ├── tests/test_functions.php   # Unit test (PHP CLI)
 ├── docs/laporan.md            # Laporan pengembangan
 ├── docs/presentasi.md         # Outline slide presentasi
+├── docs/PANDUAN-PEMBUATAN-DOCX.md  # Brief pembuatan laporan DOCX & diagram draw.io
 ├── database.sql               # Skrip pembuatan database dan data contoh
 └── index.php                  # Titik masuk aplikasi (?page=...)
 ```
